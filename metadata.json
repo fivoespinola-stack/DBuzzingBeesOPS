@@ -1,0 +1,6 @@
+{
+  "name": "DBuzzingBees",
+  "description": "Task and scheduling manager for small cleaning businesses with cleaner pay, invoicing, Excel import/export, and calendar tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
