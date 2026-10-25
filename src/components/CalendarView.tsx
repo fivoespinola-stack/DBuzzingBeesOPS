@@ -9,10 +9,11 @@ import {
   Users, 
   CheckCircle, 
   Circle,
-  Clock4
+  Clock4,
+  Repeat
 } from 'lucide-react';
 import { Task, Cleaner } from '../types';
-import { formatTime12h, formatCurrency, formatDateLong } from '../utils/formatters';
+import { formatTime12h, formatCurrency, formatDateLong, formatFrequency, isRecurringFrequency } from '../utils/formatters';
 
 interface CalendarViewProps {
   tasks: Task[];
@@ -346,9 +347,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           )}
                         </button>
                         <div>
-                          <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
-                            {task.jobType}
-                          </h4>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
+                              {task.jobType}
+                            </h4>
+                            {isRecurringFrequency(task.frequency) && (
+                              <span
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                                title={`Recurring task (${formatFrequency(task.frequency)})`}
+                              >
+                                <Repeat className="w-2.5 h-2.5" />
+                                <span>{formatFrequency(task.frequency)}</span>
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1.5 text-[11px] text-neutral-500 font-mono-numbers mt-0.5">
                             <Clock className="w-3 h-3" />
                             <span>

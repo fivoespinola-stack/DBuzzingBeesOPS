@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, Calendar, DollarSign, MapPin, FileText, UserCheck, CheckCircle2, Wand2 } from 'lucide-react';
-import { Task, Cleaner, JobType, PayType, Frequency } from '../types';
-import { calculateEndTime } from '../utils/formatters';
+import { X, Clock, Calendar, DollarSign, MapPin, FileText, UserCheck, CheckCircle2, Mail, CreditCard, CalendarDays, Check } from 'lucide-react';
+import { Task, Cleaner, JobType, PayType, PaymentTerm, Frequency } from '../types';
+import { 
+  calculateEndTime, 
+  formatDate, 
+  formatFrequency, 
+  isRecurringFrequency, 
+  getScheduledDatesForSixMonths, 
+  generateSixMonthRecurringTasks 
+} from '../utils/formatters';
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (task: Task) => void;
+  onSave: (task: Task, recurringInstances?: Task[]) => void;
   taskToEdit?: Task | null;
   cleaners: Cleaner[];
   defaultDate?: string;
@@ -35,23 +42,41 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [customJobType, setCustomJobType] = useState('');
   const [isCustomJob, setIsCustomJob] = useState(false);
   const [address, setAddress] = useState('');
+  const [clientNumber, setClientNumber] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('12:00');
   const [fixHour, setFixHour] = useState<number>(3.0);
   const [rate, setRate] = useState<number>(55.0);
   const [payType, setPayType] = useState<PayType>('Hourly');
+  const [paymentTerm, setPaymentTerm] = useState<PaymentTerm>('Cash');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [assignedCleanerIds, setAssignedCleanerIds] = useState<string[]>([]);
   const [frequency, setFrequency] = useState<Frequency>('one-off');
+  const [customFrequency, setCustomFrequency] = useState('');
+  const [isCustomFrequency, setIsCustomFrequency] = useState(false);
+  const [applySixMonths, setApplySixMonths] = useState(true);
   const [remarks, setRemarks] = useState('');
   const [completed, setCompleted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const prevIsOpenRef = React.useRef(false);
   const prevTaskIdRef = React.useRef<string | null | undefined>(undefined);
+
+  const STANDARD_FREQUENCIES = [
+    'one-off',
+    'twice-a-week',
+    'weekly',
+    'fortnightly',
+    'every-3rd-week',
+    'monthly',
+    'end-of-month',
+    'every-2-months',
+    'flexible',
+  ];
 
   useEffect(() => {
     // Only re-initialize form when modal opens or when editing a different task
@@ -69,17 +94,50 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           setIsCustomJob(true);
         }
         setAddress(taskToEdit.address || '');
+        setClientNumber(taskToEdit.clientNumber || '');
         setClientName(taskToEdit.clientName || '');
         setClientPhone(taskToEdit.clientPhone || '');
+        setClientEmail(taskToEdit.clientEmail || '');
         setDate(taskToEdit.date || '');
         setStartTime(taskToEdit.startTime || '09:00');
         setEndTime(taskToEdit.endTime || '12:00');
         setFixHour(taskToEdit.fixHour || 3.0);
         setRate(taskToEdit.rate || 55.0);
-        setPayType(taskToEdit.payType || 'Hourly');
+
+        // Pay Type initialization (Restored to original options: Hourly or Fixed Price)
+        const currentPayType = taskToEdit.payType;
+        if (currentPayType === 'Fixed Price') {
+          setPayType('Fixed Price');
+        } else {
+          setPayType('Hourly');
+        }
+
+        // Payment Term initialization (Cash or Invoice)
+        const currentPaymentTerm = taskToEdit.paymentTerm;
+        if (currentPaymentTerm === 'Invoice' || currentPaymentTerm === 'Cash') {
+          setPaymentTerm(currentPaymentTerm);
+        } else if (taskToEdit.payType === 'Invoice' || taskToEdit.invoiceNumber) {
+          setPaymentTerm('Invoice');
+        } else {
+          setPaymentTerm('Cash');
+        }
+
         setInvoiceNumber(taskToEdit.invoiceNumber || '');
         setAssignedCleanerIds(taskToEdit.assignedCleanerIds || []);
-        setFrequency(taskToEdit.frequency || 'one-off');
+
+        // Frequency initialization
+        const currentFreq = taskToEdit.frequency || 'one-off';
+        if (STANDARD_FREQUENCIES.includes(currentFreq)) {
+          setFrequency(currentFreq);
+          setIsCustomFrequency(false);
+          setCustomFrequency('');
+        } else {
+          setFrequency('others');
+          setIsCustomFrequency(true);
+          setCustomFrequency(currentFreq === 'others' ? '' : currentFreq);
+        }
+
+        setApplySixMonths(false);
         setRemarks(taskToEdit.remarks || '');
         setCompleted(taskToEdit.completed || false);
       } else {
@@ -88,8 +146,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setIsCustomJob(false);
         setCustomJobType('');
         setAddress('');
+        setClientNumber('');
         setClientName('');
         setClientPhone('');
+        setClientEmail('');
         const todayStr = defaultDate || new Date().toISOString().split('T')[0];
         setDate(todayStr);
         setStartTime('09:00');
@@ -97,10 +157,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setEndTime(calculateEndTime('09:00', 3.0));
         setRate(55.0);
         setPayType('Hourly');
+        setPaymentTerm('Cash');
         // Leave invoice number empty until client pays obligation
         setInvoiceNumber('');
         setAssignedCleanerIds(cleaners.length > 0 ? [cleaners[0].id] : []);
         setFrequency('one-off');
+        setIsCustomFrequency(false);
+        setCustomFrequency('');
+        setApplySixMonths(true);
         setRemarks('');
         setCompleted(false);
       }
@@ -129,12 +193,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     );
   };
 
-  const handleGenerateInvoiceNum = () => {
-    const year = new Date().getFullYear();
-    const rand = Math.floor(100 + Math.random() * 900);
-    setInvoiceNumber(`INV-${year}-${rand}`);
-  };
-
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
     if (!address.trim()) {
@@ -153,6 +211,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (isCustomJob && !customJobType.trim()) {
       newErrors.jobType = 'Please specify custom job type.';
     }
+    if (isCustomFrequency && !customFrequency.trim()) {
+      newErrors.frequency = 'Please specify custom frequency.';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -163,28 +224,40 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (!validate()) return;
 
     const finalJobType = isCustomJob ? customJobType.trim() : jobType;
+    const finalFrequency = isCustomFrequency ? customFrequency.trim() : frequency;
+    const isRecurring = isRecurringFrequency(finalFrequency);
 
     const savedTask: Task = {
       id: taskToEdit ? taskToEdit.id : `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       jobType: finalJobType,
       address: address.trim(),
+      clientNumber: clientNumber.trim() || undefined,
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
+      clientEmail: clientEmail.trim(),
       fixHour,
       rate,
       payType,
+      paymentTerm,
       invoiceNumber: invoiceNumber.trim(),
       assignedCleanerIds,
       remarks: remarks.trim(),
       date,
       startTime,
       endTime,
-      frequency,
+      frequency: finalFrequency,
       completed,
       createdAt: taskToEdit ? taskToEdit.createdAt : new Date().toISOString(),
+      isRecurring,
+      seriesId: taskToEdit?.seriesId,
     };
 
-    onSave(savedTask);
+    let futureRecurringInstances: Task[] = [];
+    if (applySixMonths && isRecurring) {
+      futureRecurringInstances = generateSixMonthRecurringTasks(savedTask);
+    }
+
+    onSave(savedTask, futureRecurringInstances);
     onClose();
   };
 
@@ -266,8 +339,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </label>
               <select
                 id="task-frequency"
-                value={frequency}
-                onChange={(e) => setFrequency(e.target.value as Frequency)}
+                value={isCustomFrequency ? 'others' : frequency}
+                onChange={(e) => {
+                  if (e.target.value === 'others') {
+                    setIsCustomFrequency(true);
+                    setFrequency('others');
+                  } else {
+                    setIsCustomFrequency(false);
+                    setFrequency(e.target.value as Frequency);
+                  }
+                }}
                 className="w-full px-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white"
               >
                 <option value="one-off">One-off Job</option>
@@ -279,8 +360,43 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <option value="end-of-month">End of the month</option>
                 <option value="every-2-months">Every 2 months</option>
                 <option value="flexible">Flexible</option>
-                <option value="others">Others</option>
+                <option value="others">Others (Custom frequency)...</option>
               </select>
+              {isCustomFrequency && (
+                <input
+                  type="text"
+                  placeholder="Enter custom frequency (e.g. Every 10 days, Bi-monthly)..."
+                  value={customFrequency}
+                  onChange={(e) => setCustomFrequency(e.target.value)}
+                  className="mt-2 w-full px-3 py-1.5 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white"
+                />
+              )}
+              {isRecurringFrequency(isCustomFrequency ? customFrequency : frequency) && (
+                <div className="mt-2.5 p-3 rounded-xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-xs text-amber-950 dark:text-amber-100 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-bold text-neutral-900 dark:text-white">
+                      <CalendarDays className="w-4 h-4 text-amber-600" />
+                      <span>Cleaning Calendar (Next 6 Months)</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full font-bold bg-[#FFB509] text-neutral-950 text-[10px]">
+                      {getScheduledDatesForSixMonths(date || new Date().toISOString().split('T')[0], isCustomFrequency ? customFrequency : frequency).length} Visits
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-600 dark:text-neutral-300">
+                    Frequency <strong className="text-neutral-900 dark:text-white">{formatFrequency(isCustomFrequency ? customFrequency : frequency)}</strong> will automatically populate the cleaning calendar for the next 6 months.
+                  </p>
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold select-none pt-0.5 text-[11.5px] text-neutral-900 dark:text-white">
+                    <input
+                      type="checkbox"
+                      checked={applySixMonths}
+                      onChange={(e) => setApplySixMonths(e.target.checked)}
+                      className="h-4 w-4 rounded border-neutral-300 dark:border-neutral-600 text-[#FFB509] focus:ring-[#FFB509]"
+                    />
+                    <span>Schedule recurring visits in the cleaning calendar for the next 6 months</span>
+                  </label>
+                </div>
+              )}
+              {errors.frequency && <p className="mt-1 text-xs text-red-500">{errors.frequency}</p>}
             </div>
           </div>
 
@@ -305,10 +421,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
 
           {/* Client Details */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div>
+              <label htmlFor="task-client-number" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
+                Client #
+              </label>
+              <input
+                id="task-client-number"
+                type="text"
+                placeholder="e.g. BBA0098"
+                value={clientNumber}
+                onChange={(e) => setClientNumber(e.target.value.toUpperCase())}
+                className="w-full px-3.5 py-2 text-sm font-mono bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white"
+              />
+            </div>
+
             <div>
               <label htmlFor="task-client-name" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
-                Client / Contact Name
+                Client Name
               </label>
               <input
                 id="task-client-name"
@@ -330,6 +460,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 placeholder="e.g. +1 (555) 019-2834"
                 value={clientPhone}
                 onChange={(e) => setClientPhone(e.target.value)}
+                className="w-full px-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="task-client-email" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
+                Client Email
+              </label>
+              <input
+                id="task-client-email"
+                type="email"
+                placeholder="e.g. elena.rostova@example.com"
+                value={clientEmail}
+                onChange={(e) => setClientEmail(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white"
               />
             </div>
@@ -388,8 +532,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
           </div>
 
-          {/* Fix Hour, Rate, Pay Type */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-200 dark:border-neutral-800">
+          {/* Fix Hour, Rate, Pay Type, Payment Term */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 rounded-xl bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-200 dark:border-neutral-800">
             <div>
               <label htmlFor="task-fix-hour" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
                 Fix Hours (Duration) *
@@ -436,29 +580,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 onChange={(e) => setPayType(e.target.value as PayType)}
                 className="w-full px-3.5 py-2 text-sm bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white"
               >
-                <option value="Hourly">Hourly ($/hr)</option>
-                <option value="Fixed Price">Fixed Price (Flat)</option>
-                <option value="Split Commission">Split Commission</option>
+                <option value="Hourly">Hourly Rate</option>
+                <option value="Fixed Price">Fixed Price</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="task-payment-term" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
+                Payment Term *
+              </label>
+              <select
+                id="task-payment-term"
+                value={paymentTerm}
+                onChange={(e) => setPaymentTerm(e.target.value as PaymentTerm)}
+                className="w-full px-3.5 py-2 text-sm bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white font-semibold"
+              >
+                <option value="Cash">Cash</option>
+                <option value="Invoice">Invoice</option>
               </select>
             </div>
           </div>
 
           {/* Invoice Number - Optional on creation, filled once client pays */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="task-invoice" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
-                Invoice Number <span className="text-neutral-400 font-normal lowercase">(leave empty until client pays)</span>
-              </label>
-              <button
-                type="button"
-                onClick={handleGenerateInvoiceNum}
-                className="text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1"
-                title="Generate an invoice number now if needed"
-              >
-                <Wand2 className="w-3 h-3" />
-                Generate #
-              </button>
-            </div>
+            <label htmlFor="task-invoice" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
+              Invoice Number <span className="text-neutral-400 font-normal lowercase">(leave empty until client pays obligation)</span>
+            </label>
             <div className="relative">
               <FileText className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3" />
               <input

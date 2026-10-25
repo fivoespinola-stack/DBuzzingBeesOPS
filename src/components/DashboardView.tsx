@@ -13,11 +13,13 @@ import {
   MessageSquare, 
   X,
   Phone,
+  Mail,
   User,
   FileSpreadsheet,
   ChevronRight,
   TrendingUp,
-  ArrowRight
+  ArrowRight,
+  Repeat
 } from 'lucide-react';
 import { Task, Cleaner } from '../types';
 import { BeeLogo } from './BeeLogo';
@@ -30,7 +32,9 @@ import {
   getWeekLabel,
   generateScheduleDispatchText,
   generateWeeklyDispatchText,
-  generateSingleTaskDispatchText
+  generateSingleTaskDispatchText,
+  formatFrequency,
+  isRecurringFrequency
 } from '../utils/formatters';
 
 interface DashboardViewProps {
@@ -276,8 +280,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {formatDate(task.date)}
               </span>
             )}
-            <div className="text-sm font-bold text-neutral-900 dark:text-white truncate">
-              {task.jobType}
+            <div className="text-sm font-bold text-neutral-900 dark:text-white truncate flex items-center gap-1.5">
+              <span className="truncate">{task.jobType}</span>
+              {isRecurringFrequency(task.frequency) && (
+                <span
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 shrink-0"
+                  title={`Recurring job (${formatFrequency(task.frequency)})`}
+                >
+                  <Repeat className="w-2.5 h-2.5" />
+                  <span>{formatFrequency(task.frequency)}</span>
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400 font-mono-numbers mt-0.5">
               <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -306,9 +319,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
                 <span className="truncate">{task.clientPhone}</span>
               </a>
-            ) : (
+            ) : null}
+            {task.clientEmail ? (
+              <a
+                href={`mailto:${task.clientEmail}`}
+                className="flex items-center gap-1.5 text-[11px] text-blue-600 dark:text-blue-400 hover:underline mt-0.5 truncate"
+                title={`Email ${task.clientEmail}`}
+              >
+                <Mail className="w-3 h-3 text-neutral-400 shrink-0" />
+                <span className="truncate">{task.clientEmail}</span>
+              </a>
+            ) : null}
+            {!task.clientPhone && !task.clientEmail && (
               <div className="text-[10px] text-neutral-400 italic mt-0.5">
-                No phone recorded
+                No contact recorded
               </div>
             )}
           </div>

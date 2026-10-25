@@ -8,7 +8,11 @@ export type JobType =
   | 'Carpet & Upholstery Steam'
   | 'Post-Construction';
 
-export type PayType = 'Hourly' | 'Fixed Price' | 'Split Commission';
+export type PayType = 'Hourly' | 'Fixed Price' | string;
+
+export type PaymentTerm = 'Cash' | 'Invoice';
+
+export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly';
 
 export type Frequency = 
   | 'one-off' 
@@ -20,17 +24,21 @@ export type Frequency =
   | 'end-of-month'
   | 'every-2-months'
   | 'flexible'
-  | 'others';
+  | 'others'
+  | string;
 
 export interface Task {
   id: string;
   jobType: JobType | string;
   address: string;
+  clientNumber?: string; // e.g. "BBA0098"
   clientName?: string;
   clientPhone?: string;
+  clientEmail?: string;
   fixHour: number; // e.g. 3.5 hrs
   rate: number; // charge rate e.g. $45/hr or fixed $160
-  payType: PayType;
+  payType: PayType; // Hourly or Fixed Price
+  paymentTerm: PaymentTerm; // Cash or Invoice
   invoiceNumber: string; // e.g. "INV-2026-101"
   assignedCleanerIds: string[]; // cleaner IDs
   remarks: string;
@@ -40,6 +48,10 @@ export interface Task {
   frequency: Frequency;
   completed: boolean;
   createdAt: string;
+  isRecurring?: boolean;
+  recurrence?: RecurrenceType;
+  nextInstanceGenerated?: boolean;
+  seriesId?: string;
 }
 
 export interface Cleaner {
@@ -77,16 +89,26 @@ export interface CleanerPaySummary {
   tasks: Task[];
 }
 
+export interface CleanerWeeklyPaymentRecord {
+  isPaid: boolean;
+  paidAt?: string;
+}
+
 export interface ImportPreviewRow {
   rowNumber: number;
   jobType: string;
   address: string;
+  clientNumber?: string;
+  clientName?: string;
+  clientPhone?: string;
+  clientEmail?: string;
   date: string;
   startTime: string;
   endTime: string;
   fixHour: number;
   rate: number;
   payType: PayType;
+  paymentTerm: PaymentTerm;
   invoiceNumber: string;
   frequency: Frequency;
   assignedCleaners: string[];

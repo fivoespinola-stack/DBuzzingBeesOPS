@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Task, Cleaner, ImportPreviewRow, CleanerPaySummary, Frequency } from '../types';
+import { Task, Cleaner, ImportPreviewRow, CleanerPaySummary, Frequency, PaymentTerm } from '../types';
 
 // Helper to format Excel serial date or string date
 export const normalizeExcelDate = (val: any): string => {
@@ -89,12 +89,14 @@ export const downloadTasksTemplate = () => {
       'Address': '124 Maple Street, Apt 3',
       'Client Name': 'Jessica Taylor',
       'Client Phone': '+1 (555) 345-6789',
+      'Client Email': 'jessica.t@example.com',
       'Date': '2026-10-25',
       'Start Time': '09:00',
       'End Time': '12:30',
       'Fix Hours': 3.5,
       'Rate': 65.0,
-      'Pay Type': 'Hourly',
+      'Pay Type': 'Hourly Rate',
+      'Payment Term': 'Invoice',
       'Invoice Number': 'INV-2026-201',
       'Frequency': 'fortnightly',
       'Assigned Cleaners': 'Maya Lin, Chloe Davies',
@@ -106,13 +108,15 @@ export const downloadTasksTemplate = () => {
       'Address': '900 Harbor Blvd, Suite 200',
       'Client Name': 'Zenith Media Inc',
       'Client Phone': '+1 (555) 789-0123',
+      'Client Email': 'office@zenithmedia.com',
       'Date': '2026-10-26',
       'Start Time': '18:00',
       'End Time': '21:00',
       'Fix Hours': 3.0,
       'Rate': 240.0,
       'Pay Type': 'Fixed Price',
-      'Invoice Number': 'INV-2026-202',
+      'Payment Term': 'Cash',
+      'Invoice Number': '',
       'Frequency': 'weekly',
       'Assigned Cleaners': 'Marcus Sterling',
       'Remarks': 'After hours security code #7712. Empty all bins.',
@@ -127,21 +131,23 @@ export const downloadTasksTemplate = () => {
     { wch: 28 }, // Address
     { wch: 18 }, // Client Name
     { wch: 18 }, // Client Phone
+    { wch: 24 }, // Client Email
     { wch: 12 }, // Date
     { wch: 10 }, // Start Time
     { wch: 10 }, // End Time
     { wch: 10 }, // Fix Hours
     { wch: 10 }, // Rate
-    { wch: 12 }, // Pay Type
-    { wch: 15 }, // Invoice Number
-    { wch: 12 }, // Frequency
-    { wch: 25 }, // Assigned Cleaners
+    { wch: 14 }, // Pay Type
+    { wch: 14 }, // Payment Term
+    { wch: 16 }, // Invoice Number
+    { wch: 14 }, // Frequency
+    { wch: 24 }, // Assigned Cleaners
     { wch: 35 }, // Remarks
     { wch: 10 }, // Completed
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Tasks_Template');
+  XLSX.utils.book_append_sheet(wb, ws, 'Tasks Template');
   triggerDownloadWorkbook(wb, 'DBuzzingBees_Tasks_Template.xlsx');
 };
 
@@ -161,12 +167,14 @@ export const exportAllDataToExcel = (tasks: Task[], cleaners: Cleaner[], paySumm
       'Address': t.address,
       'Client': t.clientName || 'N/A',
       'Phone': t.clientPhone || 'N/A',
+      'Client Email': t.clientEmail || 'N/A',
       'Date': t.date,
       'Start Time': t.startTime,
       'End Time': t.endTime,
       'Fix Hours': t.fixHour,
       'Rate ($)': t.rate,
-      'Pay Type': t.payType,
+      'Pay Type': t.payType === 'Fixed Price' ? 'Fixed Price' : 'Hourly Rate',
+      'Payment Term': t.paymentTerm || 'Cash',
       'Invoice #': t.invoiceNumber,
       'Frequency': t.frequency,
       'Assigned Cleaners': cleanerNames,
@@ -339,14 +347,38 @@ export const parseTasksFromExcel = async (
           const rawRate = parseFloat(getField(['Rate', 'Price', 'Charge Rate', 'Amount']));
           const rate = isNaN(rawRate) || rawRate < 0 ? 55.0 : rawRate;
 
+          // Pay Type (Hourly or Fixed Price)
           const rawPayType = String(getField(['Pay Type', 'PayType', 'Billing Type'])).toLowerCase();
-          let payType: 'Hourly' | 'Fixed Price' | 'Split Commission' = 'Hourly';
-          if (rawPayType.includes('fixed')) payType = 'Fixed Price';
-          else if (rawPayType.includes('split') || rawPayType.includes('commission')) payType = 'Split Commission';
+          let payType: string = 'Hourly';
+          if (rawPayType.includes('fixed') || rawPayType.includes('flat')) {
+            payType = 'Fixed Price';
+          } else if (rawPayType.includes('hour')) {
+            payType = 'Hourly';
+          } else if (rate > 150) {
+            payType = 'Fixed Price';
+          }
+
+          // Payment Term (Cash or Invoice)
+          const rawTerm = String(getField(['Payment Term', 'PaymentTerm', 'Payment Method', 'Term', 'Terms'])).toLowerCase();
+          let paymentTerm: PaymentTerm = 'Cash';
+          if (rawTerm.includes('invoice') || rawTerm.includes('bill') || rawPayType.includes('invoice')) {
+            paymentTerm = 'Invoice';
+          } else if (rawTerm.includes('cash') || rawPayType.includes('cash')) {
+            paymentTerm = 'Cash';
+          }
 
           const invNumber = String(
-            getField(['Invoice Number', 'Invoice', 'Inv#', 'Invoice#']) || `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+            getField(['Invoice Number', 'Invoice', 'Inv#', 'Invoice#']) || ''
           ).trim();
+
+          // If invoice number is present, payment term defaults to Invoice if not set
+          if (invNumber && !rawTerm) {
+            paymentTerm = 'Invoice';
+          }
+
+          const clientName = String(getField(['Client Name', 'Client', 'Customer', 'Customer Name'])).trim();
+          const clientPhone = String(getField(['Client Phone', 'Phone', 'Contact Number', 'Mobile'])).trim();
+          const clientEmail = String(getField(['Client Email', 'Email', 'Client Mail', 'Email Address'])).trim();
 
           const rawFreq = String(getField(['Frequency', 'Schedule', 'Repeat'])).toLowerCase();
           let frequency: Frequency = 'one-off';
@@ -373,12 +405,16 @@ export const parseTasksFromExcel = async (
             rowNumber: idx + 2, // 1-based, row 1 is header
             jobType,
             address,
+            clientName,
+            clientPhone,
+            clientEmail,
             date,
             startTime,
             endTime,
             fixHour,
             rate,
             payType,
+            paymentTerm,
             invoiceNumber: invNumber,
             frequency,
             assignedCleaners: assignedCleanerNames,
@@ -435,11 +471,13 @@ export const commitPreviewRowsToTasks = (
         id: `task-imp-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
         jobType: r.jobType,
         address: r.address,
-        clientName: '',
-        clientPhone: '',
+        clientName: r.clientName || '',
+        clientPhone: r.clientPhone || '',
+        clientEmail: r.clientEmail || '',
         fixHour: r.fixHour,
         rate: r.rate,
         payType: r.payType,
+        paymentTerm: r.paymentTerm || 'Cash',
         invoiceNumber: r.invoiceNumber,
         assignedCleanerIds: assignedIds,
         remarks: r.remarks,

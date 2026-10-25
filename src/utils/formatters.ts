@@ -1,3 +1,5 @@
+import { Task, RecurrenceType } from '../types';
+
 // Currency and date formatting helpers
 
 export const formatCurrency = (val: number): string => {
@@ -131,11 +133,12 @@ export const generateScheduleDispatchText = (
   sortedTasks.forEach((task, index) => {
     const cleanerNames = task.assignedCleanerIds.map(getCleanerName).join(', ');
     const timeRange = `${formatTime12h(task.startTime)} - ${formatTime12h(task.endTime)}`;
+    const contactInfo = [task.clientPhone, task.clientEmail].filter(Boolean).join(' | ') || 'N/A';
     
     text += `[${index + 1}] ${timeRange} (${task.fixHour} hrs)\n`;
     text += `Job: ${task.jobType}\n`;
     text += `Client: ${task.clientName || 'N/A'}\n`;
-    text += `Contact: ${task.clientPhone || 'N/A'}\n`;
+    text += `Contact: ${contactInfo}\n`;
     text += `Address: ${task.address}\n`;
     text += `Assigned Cleaners: ${cleanerNames || 'Unassigned'}\n`;
     if (task.remarks) {
@@ -151,13 +154,14 @@ export const generateSingleTaskDispatchText = (task: any, cleaners: Array<any>):
   const getCleanerName = (id: string) => cleaners.find((c) => c.id === id)?.name || id;
   const cleanerNames = task.assignedCleanerIds.map(getCleanerName).join(', ');
   const timeRange = `${formatTime12h(task.startTime)} - ${formatTime12h(task.endTime)}`;
+  const contactInfo = [task.clientPhone, task.clientEmail].filter(Boolean).join(' | ') || 'N/A';
 
   let text = `Job Schedule\n`;
   text += `Time: ${timeRange}\n`;
   text += `Duration: ${task.fixHour} hrs\n`;
   text += `Job Type: ${task.jobType}\n`;
   text += `Client: ${task.clientName || 'N/A'}\n`;
-  text += `Contact: ${task.clientPhone || 'N/A'}\n`;
+  text += `Contact: ${contactInfo}\n`;
   text += `Address: ${task.address}\n`;
   text += `Assigned Cleaners: ${cleanerNames || 'Unassigned'}\n`;
   if (task.remarks) {
@@ -202,11 +206,12 @@ export const generateWeeklyDispatchText = (
     }
     const cleanerNames = task.assignedCleanerIds.map(getCleanerName).join(', ');
     const timeRange = `${formatTime12h(task.startTime)} - ${formatTime12h(task.endTime)}`;
+    const contactInfo = [task.clientPhone, task.clientEmail].filter(Boolean).join(' | ') || 'N/A';
     
     text += `• Time: ${timeRange} (${task.fixHour} hrs)\n`;
     text += `  Job Type: ${task.jobType}\n`;
     text += `  Client: ${task.clientName || 'N/A'}\n`;
-    text += `  Contact: ${task.clientPhone || 'N/A'}\n`;
+    text += `  Contact: ${contactInfo}\n`;
     text += `  Address: ${task.address}\n`;
     text += `  Assigned Cleaners: ${cleanerNames || 'Unassigned'}\n`;
     if (task.remarks) {
@@ -244,5 +249,223 @@ export const formatFrequency = (freq: string): string => {
       return freq;
   }
 };
+
+/**
+ * Calculates the next scheduled date (YYYY-MM-DD) based on recurrence setting.
+ * Supports: 'daily' (+1 day), 'weekly' (+7 days), 'monthly' (+1 month with day-clamping).
+ */
+export const calculateNextScheduledDate = (
+  dateStr: string,
+  recurrence: RecurrenceType
+): string => {
+  if (!dateStr || recurrence === 'none') return dateStr;
+  try {
+    const [yStr, mStr, dStr] = dateStr.split('-');
+    const year = parseInt(yStr, 10);
+    const month = parseInt(mStr, 10) - 1;
+    const day = parseInt(dStr, 10);
+    // Use noon to avoid daylight saving boundary shifts
+    const date = new Date(year, month, day, 12, 0, 0);
+
+    if (recurrence === 'daily') {
+      date.setDate(date.getDate() + 1);
+    } else if (recurrence === 'weekly') {
+      date.setDate(date.getDate() + 7);
+    } else if (recurrence === 'monthly') {
+      const targetMonth = date.getMonth() + 1;
+      date.setMonth(targetMonth);
+      // Handle day rollover (e.g. Jan 31 -> Mar 3 => clamp to Feb 28/29)
+      if (date.getMonth() !== (targetMonth % 12)) {
+        date.setDate(0);
+      }
+    }
+
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  } catch {
+    return dateStr;
+  }
+};
+
+/**
+ * Generates the next scheduled instance of a completed recurring task.
+ */
+export const generateNextRecurringTask = (completedTask: Task): Task => {
+  const recurrence = (completedTask.recurrence && completedTask.recurrence !== 'none')
+    ? completedTask.recurrence
+    : 'weekly';
+  const nextDate = calculateNextScheduledDate(completedTask.date, recurrence);
+
+  return {
+    ...completedTask,
+    id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    date: nextDate,
+    completed: false,
+    invoiceNumber: '', // Reset invoice number until client pays
+    createdAt: new Date().toISOString(),
+    isRecurring: true,
+    recurrence,
+    nextInstanceGenerated: false,
+  };
+};
+
+export const formatRecurrenceLabel = (recurrence?: RecurrenceType): string => {
+  switch (recurrence) {
+    case 'daily':
+      return 'Daily';
+    case 'weekly':
+      return 'Weekly';
+    case 'monthly':
+      return 'Monthly';
+    case 'none':
+    default:
+      return 'None';
+  }
+};
+
+/**
+ * Checks if a frequency should be scheduled across the cleaning calendar for the next 6 months.
+ * All frequencies EXCEPT 'one-off', 'flexible', and 'others' are recurring.
+ */
+export const isRecurringFrequency = (freq?: string): boolean => {
+  if (!freq) return false;
+  const f = freq.toLowerCase().trim();
+  if (f === 'one-off' || f === 'flexible' || f === 'others' || f === 'other' || f === '') {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * Returns all scheduled dates (YYYY-MM-DD) across the next 6 months for a given frequency.
+ * Starts from startDateStr and steps through 6 calendar months (approx 183 days).
+ */
+export const getScheduledDatesForSixMonths = (
+  startDateStr: string,
+  frequency: string
+): string[] => {
+  if (!startDateStr || !isRecurringFrequency(frequency)) return [startDateStr];
+
+  try {
+    const [y, m, d] = startDateStr.split('-').map(Number);
+    const start = new Date(y, m - 1, d, 12, 0, 0);
+    const cutoff = new Date(y, m - 1, d, 12, 0, 0);
+    cutoff.setMonth(cutoff.getMonth() + 6);
+
+    const dates: string[] = [startDateStr];
+    const toDateStr = (date: Date) => {
+      const yr = date.getFullYear();
+      const mo = String(date.getMonth() + 1).padStart(2, '0');
+      const da = String(date.getDate()).padStart(2, '0');
+      return `${yr}-${mo}-${da}`;
+    };
+
+    const norm = frequency.toLowerCase().trim();
+
+    if (norm === 'twice-a-week') {
+      let curr = new Date(start);
+      let step = 0;
+      while (true) {
+        const days = step % 2 === 0 ? 3 : 4;
+        curr = new Date(curr);
+        curr.setDate(curr.getDate() + days);
+        if (curr > cutoff) break;
+        dates.push(toDateStr(curr));
+        step++;
+      }
+    } else if (norm === 'weekly') {
+      let curr = new Date(start);
+      while (true) {
+        curr = new Date(curr);
+        curr.setDate(curr.getDate() + 7);
+        if (curr > cutoff) break;
+        dates.push(toDateStr(curr));
+      }
+    } else if (norm === 'fortnightly') {
+      let curr = new Date(start);
+      while (true) {
+        curr = new Date(curr);
+        curr.setDate(curr.getDate() + 14);
+        if (curr > cutoff) break;
+        dates.push(toDateStr(curr));
+      }
+    } else if (norm === 'every-3rd-week') {
+      let curr = new Date(start);
+      while (true) {
+        curr = new Date(curr);
+        curr.setDate(curr.getDate() + 21);
+        if (curr > cutoff) break;
+        dates.push(toDateStr(curr));
+      }
+    } else if (norm === 'monthly') {
+      let monthStep = 1;
+      while (monthStep <= 6) {
+        const targetMonthIndex = (m - 1) + monthStep;
+        const yr = y + Math.floor(targetMonthIndex / 12);
+        const mo = targetMonthIndex % 12;
+        const maxDays = new Date(yr, mo + 1, 0).getDate();
+        const clampedDay = Math.min(d, maxDays);
+        const curr = new Date(yr, mo, clampedDay, 12, 0, 0);
+        if (curr > cutoff) break;
+        dates.push(toDateStr(curr));
+        monthStep++;
+      }
+    } else if (norm === 'end-of-month') {
+      let monthStep = 1;
+      while (monthStep <= 6) {
+        const targetMonthIndex = (m - 1) + monthStep;
+        const yr = y + Math.floor(targetMonthIndex / 12);
+        const mo = targetMonthIndex % 12;
+        const curr = new Date(yr, mo + 1, 0, 12, 0, 0);
+        if (curr > cutoff) break;
+        dates.push(toDateStr(curr));
+        monthStep++;
+      }
+    } else if (norm === 'every-2-months') {
+      let monthStep = 2;
+      while (monthStep <= 6) {
+        const targetMonthIndex = (m - 1) + monthStep;
+        const yr = y + Math.floor(targetMonthIndex / 12);
+        const mo = targetMonthIndex % 12;
+        const maxDays = new Date(yr, mo + 1, 0).getDate();
+        const clampedDay = Math.min(d, maxDays);
+        const curr = new Date(yr, mo, clampedDay, 12, 0, 0);
+        if (curr > cutoff) break;
+        dates.push(toDateStr(curr));
+        monthStep += 2;
+      }
+    }
+
+    return dates;
+  } catch {
+    return [startDateStr];
+  }
+};
+
+/**
+ * Generates future scheduled instances for a recurring task across the next 6 months.
+ * Skips the first date as that belongs to the primary/base task.
+ */
+export const generateSixMonthRecurringTasks = (baseTask: Task): Task[] => {
+  if (!isRecurringFrequency(baseTask.frequency)) return [];
+  const dates = getScheduledDatesForSixMonths(baseTask.date, baseTask.frequency);
+  if (dates.length <= 1) return [];
+
+  const seriesId = baseTask.seriesId || `series-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const futureDates = dates.slice(1);
+
+  return futureDates.map((dateStr, index) => ({
+    ...baseTask,
+    id: `task-${Date.now()}-${index + 1}-${Math.random().toString(36).substring(2, 6)}`,
+    date: dateStr,
+    completed: false,
+    invoiceNumber: '', // Unbilled for future scheduled instances
+    createdAt: new Date().toISOString(),
+    seriesId,
+  }));
+};
+
 
 

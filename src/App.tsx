@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Repeat, CheckCircle2, X } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { LoginPage } from './components/LoginPage';
 import { DashboardView } from './components/DashboardView';
@@ -25,6 +26,7 @@ import {
   getInitialTasks
 } from './services/storage';
 import { exportAllDataToExcel } from './services/excelService';
+import { generateNextRecurringTask, formatDate } from './utils/formatters';
 
 export default function App() {
   // Theme state
@@ -46,6 +48,22 @@ export default function App() {
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [taskModalDefaultDate, setTaskModalDefaultDate] = useState<string | undefined>(undefined);
   const [importExportModalOpen, setImportExportModalOpen] = useState(false);
+
+  // Floating Toast notification for auto-scheduled recurring tasks
+  const [recurringToast, setRecurringToast] = useState<{
+    message: string;
+    date: string;
+    cadence: string;
+    address: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!recurringToast) return;
+    const timer = setTimeout(() => {
+      setRecurringToast(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [recurringToast]);
 
   // Initialize theme on mount
   useEffect(() => {
@@ -162,12 +180,23 @@ export default function App() {
     });
   }, []);
 
-  const handleSaveTask = (savedTask: Task) => {
+  const handleSaveTask = (savedTask: Task, futureRecurringInstances?: Task[]) => {
     setTasks((prev) => {
       const exists = prev.some((t) => t.id === savedTask.id);
-      const updated = exists
+      let updated = exists
         ? prev.map((t) => (t.id === savedTask.id ? savedTask : t))
         : [savedTask, ...prev];
+
+      if (futureRecurringInstances && futureRecurringInstances.length > 0) {
+        updated = [...futureRecurringInstances, ...updated];
+        setRecurringToast({
+          message: `Scheduled ${1 + futureRecurringInstances.length} visits in Cleaning Calendar!`,
+          date: futureRecurringInstances[futureRecurringInstances.length - 1].date,
+          cadence: savedTask.frequency,
+          address: `${savedTask.clientName ? savedTask.clientName + ' · ' : ''}${savedTask.address}`,
+        });
+      }
+
       saveTasks(updated);
       return updated;
     });
@@ -282,8 +311,8 @@ export default function App() {
         pendingTasksCount={pendingTasksCount}
       />
 
-      {/* Main Content Workspace Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-16">
+      {/* Main Content Workspace Container - Expanded max-w on desktop to optimize table visibility */}
+      <main className="flex-1 max-w-7xl xl:max-w-[1760px] 2xl:max-w-[1920px] w-full mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 pt-5 sm:pt-6 pb-16 transition-all">
         
         {currentTab === 'dashboard' && (
           <DashboardView
@@ -342,7 +371,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 py-4 no-print transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-500 dark:text-neutral-400 gap-2">
+        <div className="max-w-7xl xl:max-w-[1760px] 2xl:max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-500 dark:text-neutral-400 gap-2">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-neutral-900 dark:text-white">DBuzzingBees</span>
             <span>·</span>
@@ -380,6 +409,40 @@ export default function App() {
         onImportComplete={handleImportComplete}
         onResetData={handleResetData}
       />
+
+      {/* Auto-Scheduled Recurring Task Toast */}
+      {recurringToast && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 right-5 z-50 max-w-md w-full p-4 rounded-2xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xl border border-neutral-700 dark:border-neutral-200 flex items-start justify-between gap-3 animate-in fade-in slide-in-from-bottom-5 duration-300"
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-[#FFB509] flex items-center justify-center text-neutral-950 shrink-0 mt-0.5 font-bold shadow-xs">
+              <Repeat className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 font-bold text-sm">
+                <span>{recurringToast.message}</span>
+              </div>
+              <p className="text-xs text-neutral-300 dark:text-neutral-600 mt-0.5 line-clamp-1">
+                {recurringToast.address}
+              </p>
+              <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-800 dark:bg-neutral-100 text-[11px] font-semibold text-amber-400 dark:text-amber-700">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Repeats across 6 months through <strong>{formatDate(recurringToast.date)}</strong></span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setRecurringToast(null)}
+            className="p-1 rounded-lg text-neutral-400 hover:text-white dark:hover:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-colors"
+            title="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </aside>
+      )}
 
     </div>
   );

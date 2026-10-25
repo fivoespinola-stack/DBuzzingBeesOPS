@@ -11,11 +11,14 @@ import {
   Clock, 
   CheckCircle, 
   Calendar,
-  X
+  X,
+  CreditCard,
+  RotateCcw
 } from 'lucide-react';
-import { Task, Cleaner, CleanerPaySummary } from '../types';
+import { Task, Cleaner, CleanerPaySummary, CleanerWeeklyPaymentRecord } from '../types';
 import { formatCurrency, getWeekStart, getWeekLabel, formatDate } from '../utils/formatters';
 import { exportWeeklyPaySlipExcel } from '../services/excelService';
+import { loadCleanerWeeklyPayments, saveCleanerWeeklyPayments } from '../services/storage';
 import { BeeLogo } from './BeeLogo';
 
 interface PayAndInvoiceViewProps {
@@ -34,6 +37,11 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
   const [selectedSummaryForModal, setSelectedSummaryForModal] = useState<CleanerPaySummary | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
 
+  // Persistent cleaner wage paid tracking (keyed by cleanerId_weekStartDate)
+  const [paidRecords, setPaidRecords] = useState<Record<string, CleanerWeeklyPaymentRecord>>(() => 
+    loadCleanerWeeklyPayments()
+  );
+
   // Week navigation
   const handlePrevWeek = () => {
     const prev = new Date(selectedWeekStart);
@@ -50,6 +58,25 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
   const handleThisWeek = () => {
     setSelectedWeekStart(getWeekStart(new Date()));
   };
+
+  // Date selection handler: lets the user choose any date or week manually via date picker
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (!val) return;
+    const [y, m, d] = val.split('-').map(Number);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      const picked = new Date(y, m - 1, d);
+      setSelectedWeekStart(getWeekStart(picked));
+    }
+  };
+
+  // Formatted date string for date picker input (Monday of selected week)
+  const selectedWeekDateStr = useMemo(() => {
+    const y = selectedWeekStart.getFullYear();
+    const m = String(selectedWeekStart.getMonth() + 1).padStart(2, '0');
+    const d = String(selectedWeekStart.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, [selectedWeekStart]);
 
   const weekLabel = getWeekLabel(selectedWeekStart);
 
@@ -118,12 +145,54 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
     });
   }, [cleaners, tasks, weekDates]);
 
+  // Week key (Monday date string) used as persistent storage identifier
+  const weekKey = weekDates[0] || 'week-current';
+
+  // Mark cleaner wage as paid with timestamp
+  const handleMarkAsPaid = (cleanerId: string) => {
+    const now = new Date();
+    const dateFormatted = now.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const timeFormatted = now.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+    const paidAt = `${dateFormatted}, ${timeFormatted}`;
+
+    const key = `${cleanerId}_${weekKey}`;
+    const updated = {
+      ...paidRecords,
+      [key]: {
+        isPaid: true,
+        paidAt,
+      },
+    };
+    setPaidRecords(updated);
+    saveCleanerWeeklyPayments(updated);
+  };
+
+  // Undo paid status
+  const handleUndoPaid = (cleanerId: string) => {
+    const key = `${cleanerId}_${weekKey}`;
+    const updated = { ...paidRecords };
+    delete updated[key];
+    setPaidRecords(updated);
+    saveCleanerWeeklyPayments(updated);
+  };
+
   // Aggregate stats
   const totalPayout = cleanerPaySummaries.reduce((sum, s) => sum + s.totalPay, 0);
   const totalInvoicedAll = cleanerPaySummaries.reduce((sum, s) => sum + s.totalInvoiced, 0);
   const totalMarginAll = totalInvoicedAll - totalPayout;
   const totalHoursWorked = cleanerPaySummaries.reduce((sum, s) => sum + s.completedHours, 0);
   const marginPercent = totalInvoicedAll > 0 ? (totalMarginAll / totalInvoicedAll) * 100 : 0;
+  const paidCleanersCount = cleanerPaySummaries.filter(
+    (c) => paidRecords[`${c.cleanerId}_${weekKey}`]?.isPaid
+  ).length;
 
   const handlePrintSlip = (summary: CleanerPaySummary) => {
     setSelectedSummaryForModal(summary);
@@ -147,8 +216,24 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
           </p>
         </div>
 
-        {/* Week Switcher */}
+        {/* Week Switcher & Manual Date Selection */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Manual Date Selection Picker */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-xl border border-neutral-300 dark:border-neutral-700 shadow-2xs">
+            <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <label htmlFor="manual-week-picker" className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 whitespace-nowrap">
+              Go to Date:
+            </label>
+            <input
+              id="manual-week-picker"
+              type="date"
+              value={selectedWeekDateStr}
+              onChange={handleDateChange}
+              className="bg-transparent border-none text-xs font-mono font-bold text-neutral-900 dark:text-white focus:outline-none cursor-pointer"
+              title="Manually choose any date or week to view and summarize"
+            />
+          </div>
+
           <div className="flex items-center gap-1.5 p-1 bg-neutral-100 dark:bg-neutral-800 rounded-xl">
             <button
               onClick={handlePrevWeek}
@@ -237,13 +322,13 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
 
       {/* Main Table */}
       <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-xs">
-        <div className="px-5 py-4 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-neutral-50 dark:bg-neutral-800/40">
+        <div className="px-5 py-4 border-b border-neutral-200 dark:border-neutral-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-neutral-50 dark:bg-neutral-800/40">
           <div>
             <h2 className="text-base font-bold text-neutral-900 dark:text-white">
               Cleaner Wage & Invoice Breakdown
             </h2>
             <p className="text-xs text-neutral-500">
-              For week period: {weekLabel}
+              For week period: {weekLabel} · <span className="font-semibold text-emerald-600 dark:text-emerald-400">{paidCleanersCount} of {cleanerPaySummaries.length} Cleaners Paid</span>
             </p>
           </div>
           <span className="text-xs text-neutral-500 font-mono-numbers">
@@ -261,98 +346,140 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                 <th className="py-3 px-4 text-right">Hours (Done/Sched)</th>
                 <th className="py-3 px-4 text-right">Hourly Pay</th>
                 <th className="py-3 px-4 text-right">Special Task/Wk</th>
-                <th className="py-3 px-4 text-right">Total Payout</th>
+                <th className="py-3 px-4 text-right min-w-[210px]">Weekly Payout & Paid Status</th>
                 <th className="py-3 px-4 text-right">Client Invoiced</th>
                 <th className="py-3 px-4 text-right">Business Margin</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-              {cleanerPaySummaries.map((summary) => (
-                <tr
-                  key={summary.cleanerId}
-                  className="hover:bg-neutral-50/70 dark:hover:bg-neutral-800/40 transition-colors"
-                >
-                  {/* Name */}
-                  <td className="py-3.5 px-4">
-                    <div className="font-bold text-neutral-900 dark:text-white">
-                      {summary.cleanerName}
-                    </div>
-                    <div className="text-[11px] text-neutral-500">
-                      {summary.taskCount} {summary.taskCount === 1 ? 'task' : 'tasks'} assigned
-                    </div>
-                  </td>
+              {cleanerPaySummaries.map((summary) => {
+                const paymentKey = `${summary.cleanerId}_${weekKey}`;
+                const paymentRecord = paidRecords[paymentKey];
+                const isPaid = !!paymentRecord?.isPaid;
 
-                  {/* Hourly Rate */}
-                  <td className="py-3.5 px-4 text-right font-mono-numbers font-medium text-neutral-700 dark:text-neutral-300">
-                    {formatCurrency(summary.hourlyRate)}/hr
-                  </td>
+                return (
+                  <tr
+                    key={summary.cleanerId}
+                    className="hover:bg-neutral-50/70 dark:hover:bg-neutral-800/40 transition-colors"
+                  >
+                    {/* Name */}
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-neutral-900 dark:text-white">
+                        {summary.cleanerName}
+                      </div>
+                      <div className="text-[11px] text-neutral-500">
+                        {summary.taskCount} {summary.taskCount === 1 ? 'task' : 'tasks'} assigned
+                      </div>
+                    </td>
 
-                  {/* Hours */}
-                  <td className="py-3.5 px-4 text-right font-mono-numbers whitespace-nowrap">
-                    <span className="font-bold text-neutral-900 dark:text-white">
-                      {summary.completedHours.toFixed(1)} h
-                    </span>
-                    <span className="text-[11px] text-neutral-400 ml-1">
-                      / {summary.scheduledHours.toFixed(1)} h
-                    </span>
-                  </td>
+                    {/* Hourly Rate */}
+                    <td className="py-3.5 px-4 text-right font-mono-numbers font-medium text-neutral-700 dark:text-neutral-300">
+                      {formatCurrency(summary.hourlyRate)}/hr
+                    </td>
 
-                  {/* Hourly Pay */}
-                  <td className="py-3.5 px-4 text-right font-mono-numbers font-medium text-neutral-900 dark:text-white">
-                    {formatCurrency(summary.regularPay)}
-                  </td>
+                    {/* Hours */}
+                    <td className="py-3.5 px-4 text-right font-mono-numbers whitespace-nowrap">
+                      <span className="font-bold text-neutral-900 dark:text-white">
+                        {summary.completedHours.toFixed(1)} h
+                      </span>
+                      <span className="text-[11px] text-neutral-400 ml-1">
+                        / {summary.scheduledHours.toFixed(1)} h
+                      </span>
+                    </td>
 
-                  {/* Special Task Pay */}
-                  <td className="py-3.5 px-4 text-right font-mono-numbers text-amber-600 dark:text-amber-400 font-semibold">
-                    {formatCurrency(summary.specialTaskPay)}
-                  </td>
+                    {/* Hourly Pay */}
+                    <td className="py-3.5 px-4 text-right font-mono-numbers font-medium text-neutral-900 dark:text-white">
+                      {formatCurrency(summary.regularPay)}
+                    </td>
 
-                  {/* Total Payout */}
-                  <td className="py-3.5 px-4 text-right font-mono-numbers font-extrabold text-neutral-950 dark:text-white">
-                    {formatCurrency(summary.totalPay)}
-                  </td>
+                    {/* Special Task Pay */}
+                    <td className="py-3.5 px-4 text-right font-mono-numbers text-amber-600 dark:text-amber-400 font-semibold">
+                      {formatCurrency(summary.specialTaskPay)}
+                    </td>
 
-                  {/* Client Invoiced */}
-                  <td className="py-3.5 px-4 text-right font-mono-numbers font-bold text-neutral-900 dark:text-white">
-                    {formatCurrency(summary.totalInvoiced)}
-                  </td>
+                    {/* Total Payout & Paid Tracking Status */}
+                    <td className="py-3.5 px-4 text-right font-mono-numbers whitespace-nowrap">
+                      <div className="font-extrabold text-neutral-950 dark:text-white text-sm">
+                        {formatCurrency(summary.totalPay)}
+                      </div>
+                      <div className="mt-1 flex items-center justify-end gap-1.5 font-sans">
+                        {isPaid ? (
+                          <div className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md text-[11px] font-semibold">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>Paid</span>
+                            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-mono font-normal">
+                              ({paymentRecord?.paidAt})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUndoPaid(summary.cleanerId)}
+                              className="ml-1 text-[10px] text-neutral-400 hover:text-red-600 hover:underline cursor-pointer font-normal"
+                              title="Undo payment status if clicked by mistake"
+                            >
+                              Undo
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">
+                              Unpaid
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleMarkAsPaid(summary.cleanerId)}
+                              className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
+                              title="Mark cleaner wage as paid for this week"
+                            >
+                              <CheckCircle className="w-3 h-3" />
+                              <span>Mark as paid</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
 
-                  {/* Margin */}
-                  <td className="py-3.5 px-4 text-right font-mono-numbers font-bold whitespace-nowrap">
-                    <span className={summary.margin >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600'}>
-                      {formatCurrency(summary.margin)}
-                    </span>
-                  </td>
+                    {/* Client Invoiced */}
+                    <td className="py-3.5 px-4 text-right font-mono-numbers font-bold text-neutral-900 dark:text-white">
+                      {formatCurrency(summary.totalInvoiced)}
+                    </td>
 
-                  {/* Actions */}
-                  <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => setSelectedSummaryForModal(summary)}
-                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 transition-colors"
-                        title="View job breakdown"
-                      >
-                        Breakdown
-                      </button>
-                      <button
-                        onClick={() => handleExportSlip(summary)}
-                        className="p-1 text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-md"
-                        title="Export Excel Pay Slip"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handlePrintSlip(summary)}
-                        className="p-1 text-neutral-400 hover:text-neutral-900 dark:hover:text-white rounded-md"
-                        title="Print Pay Slip"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    {/* Margin */}
+                    <td className="py-3.5 px-4 text-right font-mono-numbers font-bold whitespace-nowrap">
+                      <span className={summary.margin >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600'}>
+                        {formatCurrency(summary.margin)}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setSelectedSummaryForModal(summary)}
+                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 transition-colors"
+                          title="View job breakdown"
+                        >
+                          Breakdown
+                        </button>
+                        <button
+                          onClick={() => handleExportSlip(summary)}
+                          className="p-1 text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-md"
+                          title="Export Excel Pay Slip"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handlePrintSlip(summary)}
+                          className="p-1 text-neutral-400 hover:text-neutral-900 dark:hover:text-white rounded-md"
+                          title="Print Pay Slip"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
             {/* Table Totals Row */}
             <tfoot className="bg-neutral-100/70 dark:bg-neutral-800/80 border-t-2 border-neutral-300 dark:border-neutral-700 font-bold text-xs">
@@ -371,7 +498,10 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                   {formatCurrency(cleanerPaySummaries.reduce((s, c) => s + c.specialTaskPay, 0))}
                 </td>
                 <td className="py-3.5 px-4 text-right font-mono-numbers font-black text-neutral-950 dark:text-white">
-                  {formatCurrency(totalPayout)}
+                  <div>{formatCurrency(totalPayout)}</div>
+                  <div className="text-[10px] font-sans font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    {paidCleanersCount} of {cleanerPaySummaries.length} Cleaners Paid
+                  </div>
                 </td>
                 <td className="py-3.5 px-4 text-right font-mono-numbers font-black text-neutral-950 dark:text-white">
                   {formatCurrency(totalInvoicedAll)}
@@ -387,64 +517,97 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
 
         {/* Mobile View */}
         <div className="lg:hidden divide-y divide-neutral-200 dark:divide-neutral-800">
-          {cleanerPaySummaries.map((summary) => (
-            <div key={summary.cleanerId} className="p-4 space-y-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
-                    {summary.cleanerName}
-                  </h3>
-                  <div className="text-xs text-neutral-500 font-mono-numbers">
-                    Rate: {formatCurrency(summary.hourlyRate)}/hr · {summary.completedHours.toFixed(1)} hrs completed
+          {cleanerPaySummaries.map((summary) => {
+            const paymentKey = `${summary.cleanerId}_${weekKey}`;
+            const paymentRecord = paidRecords[paymentKey];
+            const isPaid = !!paymentRecord?.isPaid;
+
+            return (
+              <div key={summary.cleanerId} className="p-4 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                      {summary.cleanerName}
+                    </h3>
+                    <div className="text-xs text-neutral-500 font-mono-numbers">
+                      Rate: {formatCurrency(summary.hourlyRate)}/hr · {summary.completedHours.toFixed(1)} hrs completed
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-neutral-400 uppercase font-bold block">Payout</span>
+                    <span className="text-base font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
+                      {formatCurrency(summary.totalPay)}
+                    </span>
+                    <div className="mt-1">
+                      {isPaid ? (
+                        <div className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                          <CheckCircle className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span className="font-bold">Paid</span>
+                          <span className="text-[10px] text-neutral-500 font-mono">
+                            ({paymentRecord?.paidAt})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleUndoPaid(summary.cleanerId)}
+                            className="ml-1 text-[10px] text-red-500 hover:underline cursor-pointer"
+                          >
+                            Undo
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkAsPaid(summary.cleanerId)}
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-2xs cursor-pointer"
+                        >
+                          <CheckCircle className="w-3 h-3" />
+                          <span>Mark as paid</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-neutral-400 uppercase font-bold block">Payout</span>
-                  <span className="text-base font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
-                    {formatCurrency(summary.totalPay)}
-                  </span>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 text-xs font-mono-numbers">
-                <div>
-                  <span className="text-[10px] text-neutral-400 block">Wages</span>
-                  <span className="font-semibold text-neutral-800 dark:text-neutral-200">{formatCurrency(summary.regularPay)}</span>
+                <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 text-xs font-mono-numbers">
+                  <div>
+                    <span className="text-[10px] text-neutral-400 block">Wages</span>
+                    <span className="font-semibold text-neutral-800 dark:text-neutral-200">{formatCurrency(summary.regularPay)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-neutral-400 block">Special Wk</span>
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(summary.specialTaskPay)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-neutral-400 block">Invoiced</span>
+                    <span className="font-semibold text-neutral-800 dark:text-neutral-200">{formatCurrency(summary.totalInvoiced)}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[10px] text-neutral-400 block">Special Wk</span>
-                  <span className="font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(summary.specialTaskPay)}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-neutral-400 block">Invoiced</span>
-                  <span className="font-semibold text-neutral-800 dark:text-neutral-200">{formatCurrency(summary.totalInvoiced)}</span>
-                </div>
-              </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <button
-                  onClick={() => setSelectedSummaryForModal(summary)}
-                  className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline"
-                >
-                  View {summary.taskCount} Assigned Jobs &rarr;
-                </button>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between pt-1">
                   <button
-                    onClick={() => handleExportSlip(summary)}
-                    className="px-2.5 py-1 text-xs rounded-lg border border-neutral-200 dark:border-neutral-700"
+                    onClick={() => setSelectedSummaryForModal(summary)}
+                    className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline"
                   >
-                    Export
+                    View {summary.taskCount} Assigned Jobs &rarr;
                   </button>
-                  <button
-                    onClick={() => handlePrintSlip(summary)}
-                    className="px-2.5 py-1 text-xs rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 font-semibold"
-                  >
-                    Pay Slip
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleExportSlip(summary)}
+                      className="px-2.5 py-1 text-xs rounded-lg border border-neutral-200 dark:border-neutral-700"
+                    >
+                      Export
+                    </button>
+                    <button
+                      onClick={() => handlePrintSlip(summary)}
+                      className="px-2.5 py-1 text-xs rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 font-semibold"
+                    >
+                      Pay Slip
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -481,16 +644,25 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                     className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 flex items-center justify-between text-xs"
                   >
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-neutral-900 dark:text-white">
                           {t.jobType}
                         </span>
                         <span className="font-mono text-[11px] text-neutral-500">
                           {formatDate(t.date)} ({t.fixHour}h)
                         </span>
-                        <span className="font-mono text-[10px] bg-neutral-200 dark:bg-neutral-700 px-1.5 py-0.2 rounded font-semibold">
-                          {t.invoiceNumber}
+                        <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border shadow-2xs ${
+                          (t.paymentTerm || 'Cash') === 'Cash'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+                            : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
+                        }`}>
+                          {t.paymentTerm || 'Cash'}
                         </span>
+                        {t.invoiceNumber && (
+                          <span className="font-mono text-[10px] bg-neutral-200 dark:bg-neutral-700 px-1.5 py-0.5 rounded font-semibold text-neutral-700 dark:text-neutral-300">
+                            {t.invoiceNumber}
+                          </span>
+                        )}
                       </div>
                       <p className="text-neutral-600 dark:text-neutral-400 mt-1">
                         {t.address}
@@ -577,14 +749,26 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
             </div>
 
             {/* Cleaner Info */}
-            <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 grid grid-cols-2 gap-4 text-xs">
+            <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 grid grid-cols-3 gap-3 text-xs">
               <div>
-                <span className="text-neutral-500 block">Cleaner Name:</span>
+                <span className="text-neutral-500 block">Cleaner:</span>
                 <strong className="text-sm">{selectedSummaryForModal.cleanerName}</strong>
               </div>
               <div>
                 <span className="text-neutral-500 block">Base Pay Rate:</span>
                 <strong className="text-sm font-mono">${selectedSummaryForModal.hourlyRate.toFixed(2)} / hr</strong>
+              </div>
+              <div>
+                <span className="text-neutral-500 block">Status:</span>
+                {paidRecords[`${selectedSummaryForModal.cleanerId}_${weekKey}`]?.isPaid ? (
+                  <span className="font-bold text-emerald-600 flex items-center gap-1 text-[11px] mt-0.5">
+                    <CheckCircle className="w-3 h-3" /> PAID
+                  </span>
+                ) : (
+                  <span className="font-bold text-amber-600 text-[11px] mt-0.5 block">
+                    UNPAID
+                  </span>
+                )}
               </div>
             </div>
 
@@ -598,6 +782,7 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                   <tr>
                     <th className="py-1">Date</th>
                     <th className="py-1">Job Type / Address</th>
+                    <th className="py-1 text-center">Payment Term</th>
                     <th className="py-1 text-right">Hours</th>
                     <th className="py-1 text-right">Pay</th>
                   </tr>
@@ -606,8 +791,13 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                   {selectedSummaryForModal.tasks.map((t) => (
                     <tr key={t.id}>
                       <td className="py-1.5 text-neutral-600">{t.date}</td>
-                      <td className="py-1.5 text-neutral-900 truncate max-w-[160px]">
+                      <td className="py-1.5 text-neutral-900 truncate max-w-[150px]">
                         {t.jobType}
+                      </td>
+                      <td className="py-1.5 text-center font-sans font-bold text-[10px]">
+                        <span className={t.paymentTerm === 'Invoice' ? 'text-blue-700' : 'text-emerald-700'}>
+                          {t.paymentTerm || 'Cash'}
+                        </span>
                       </td>
                       <td className="py-1.5 text-right">{t.fixHour}h</td>
                       <td className="py-1.5 text-right">

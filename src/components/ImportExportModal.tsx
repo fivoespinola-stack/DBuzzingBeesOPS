@@ -208,7 +208,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                       Supported Column Headers in Excel:
                     </p>
                     <p>
-                      <strong>Job Type</strong>, <strong>Address</strong> (required), <strong>Date</strong> (YYYY-MM-DD), <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Fix Hours</strong>, <strong>Rate</strong>, <strong>Pay Type</strong>, <strong>Invoice Number</strong>, <strong>Frequency</strong>, <strong>Assigned Cleaners</strong>, and <strong>Remarks</strong>.
+                      <strong>Job Type</strong>, <strong>Address</strong> (required), <strong>Client Name</strong>, <strong>Client Phone</strong>, <strong>Client Email</strong>, <strong>Date</strong> (YYYY-MM-DD), <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Fix Hours</strong>, <strong>Rate</strong>, <strong>Pay Type</strong>, <strong>Payment Term</strong>, <strong>Frequency</strong>, <strong>Assigned Cleaners</strong>, and <strong>Remarks</strong>.
                     </p>
                   </div>
                 </div>
@@ -263,7 +263,8 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                           <th className="py-2.5 px-3">Time</th>
                           <th className="py-2.5 px-3 text-right">Fix Hrs</th>
                           <th className="py-2.5 px-3 text-right">Rate</th>
-                          <th className="py-2.5 px-3">Invoice #</th>
+                          <th className="py-2.5 px-3">Pay Type</th>
+                          <th className="py-2.5 px-3">Payment Term</th>
                           <th className="py-2.5 px-3">Cleaners</th>
                           <th className="py-2.5 px-3">Status</th>
                         </tr>
@@ -297,8 +298,17 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                             <td className="py-2 px-3 text-right font-mono font-semibold">
                               ${row.rate}
                             </td>
-                            <td className="py-2 px-3 font-mono text-neutral-600 dark:text-neutral-400">
-                              {row.invoiceNumber}
+                            <td className="py-2 px-3 text-neutral-600 dark:text-neutral-400 whitespace-nowrap">
+                              {row.payType === 'Fixed Price' ? 'Fixed Price' : 'Hourly Rate'}
+                            </td>
+                            <td className="py-2 px-3 whitespace-nowrap">
+                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                row.paymentTerm === 'Cash'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                              }`}>
+                                {row.paymentTerm || 'Invoice'}
+                              </span>
                             </td>
                             <td className="py-2 px-3 text-neutral-600 dark:text-neutral-400 max-w-[140px] truncate">
                               {row.assignedCleaners.join(', ') || <span className="text-neutral-400 italic">None</span>}
