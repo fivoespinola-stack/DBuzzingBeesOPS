@@ -8,12 +8,15 @@ import {
   MapPin, 
   Users, 
   CheckCircle, 
-  Circle,
-  Clock4,
-  Repeat
+  Circle, 
+  Clock4, 
+  Repeat,
+  Sparkles,
+  Send
 } from 'lucide-react';
 import { Task, Cleaner } from '../types';
-import { formatTime12h, formatCurrency, formatDateLong, formatFrequency, isRecurringFrequency } from '../utils/formatters';
+import { formatTime12h, formatCurrency, formatDateLong, formatFrequency, isRecurringFrequency, isWeekend } from '../utils/formatters';
+import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
 
 interface CalendarViewProps {
   tasks: Task[];
@@ -21,6 +24,8 @@ interface CalendarViewProps {
   onToggleComplete: (taskId: string) => void;
   onEditTask: (task: Task) => void;
   onAddNewTask: (defaultDate?: string) => void;
+  onSendConfirmation: (task: Task) => void;
+  onBulkSendConfirmation?: (tasks: Task[]) => void;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -29,6 +34,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onToggleComplete,
   onEditTask,
   onAddNewTask,
+  onSendConfirmation,
+  onBulkSendConfirmation,
 }) => {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(
@@ -204,14 +211,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
 
           {/* Day of Week Headers */}
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 py-1">
-            <span>Sun</span>
-            <span>Mon</span>
-            <span>Tue</span>
-            <span>Wed</span>
-            <span>Thu</span>
-            <span>Fri</span>
-            <span>Sat</span>
+          <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wider py-1">
+            <span className="text-amber-700 dark:text-amber-400 font-extrabold" title="Sunday: Special Tasks Only">
+              Sun <span className="hidden sm:inline text-[9px] font-semibold text-amber-600/80">(Special)</span>
+            </span>
+            <span className="text-neutral-400 dark:text-neutral-500">Mon</span>
+            <span className="text-neutral-400 dark:text-neutral-500">Tue</span>
+            <span className="text-neutral-400 dark:text-neutral-500">Wed</span>
+            <span className="text-neutral-400 dark:text-neutral-500">Thu</span>
+            <span className="text-neutral-400 dark:text-neutral-500">Fri</span>
+            <span className="text-amber-700 dark:text-amber-400 font-extrabold" title="Saturday: Special Tasks Only">
+              Sat <span className="hidden sm:inline text-[9px] font-semibold text-amber-600/80">(Special)</span>
+            </span>
           </div>
 
           {/* Month Day Cells */}
@@ -222,6 +233,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               const isToday = cell.dateStr === todayStr;
               const hasTasks = dayTasks.length > 0;
               const allDone = hasTasks && dayTasks.every((t) => t.completed);
+              const isCellWeekend = isWeekend(cell.dateStr);
 
               return (
                 <button
@@ -231,7 +243,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     isSelected
                       ? 'border-[#FFB509] bg-amber-50/60 dark:bg-amber-950/40 ring-1 ring-[#FFB509]'
                       : cell.isCurrentMonth
-                      ? 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/60 hover:border-neutral-300 dark:hover:border-neutral-700'
+                      ? isCellWeekend
+                        ? 'border-neutral-200 dark:border-neutral-800 bg-amber-50/20 dark:bg-amber-950/15 hover:border-amber-300 dark:hover:border-amber-700'
+                        : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/60 hover:border-neutral-300 dark:hover:border-neutral-700'
                       : 'border-transparent bg-neutral-50/50 dark:bg-neutral-900/20 text-neutral-400 dark:text-neutral-600'
                   }`}
                 >
@@ -242,7 +256,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         isToday
                           ? 'bg-[#FFB509] text-neutral-950 font-extrabold'
                           : cell.isCurrentMonth
-                          ? 'text-neutral-800 dark:text-neutral-200'
+                          ? isCellWeekend
+                            ? 'text-amber-800 dark:text-amber-300 font-extrabold'
+                            : 'text-neutral-800 dark:text-neutral-200'
                           : 'text-neutral-400 dark:text-neutral-600'
                       }`}
                     >
@@ -267,13 +283,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     {dayTasks.slice(0, 2).map((t) => (
                       <div
                         key={t.id}
+                        title={t.clientName ? `${t.clientName} (${t.jobType})` : t.jobType}
                         className={`text-[10px] truncate px-1 py-0.5 rounded font-medium ${
                           t.completed
                             ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 line-through'
                             : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200'
                         }`}
                       >
-                        {t.jobType}
+                        {t.clientName || 'Client Unspecified'}
                       </div>
                     ))}
                     {dayTasks.length > 2 && (
@@ -292,33 +309,61 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         <div className="lg:col-span-5 xl:col-span-4 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-neutral-200 dark:border-neutral-800">
             <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
-                Selected Day Schedule
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
+                  Selected Day Schedule
+                </span>
+                {isWeekend(selectedDateStr) && (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-500" />
+                    Special Tasks Only
+                  </span>
+                )}
+              </div>
               <h3 className="text-base font-bold text-neutral-900 dark:text-white">
                 {formatDateLong(selectedDateStr)}
               </h3>
             </div>
-            <button
-              onClick={() => onAddNewTask(selectedDateStr)}
-              className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Schedule
-            </button>
+            <div className="flex items-center gap-2">
+              {selectedDayTasks.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (onBulkSendConfirmation) onBulkSendConfirmation(selectedDayTasks);
+                    else onSendConfirmation(selectedDayTasks[0]);
+                  }}
+                  className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
+                  title="Send confirmations to all scheduled bookings on this day"
+                >
+                  <Send className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                  <span>Confirm Day ({selectedDayTasks.length})</span>
+                </button>
+              )}
+              <button
+                onClick={() => onAddNewTask(selectedDateStr)}
+                className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {isWeekend(selectedDateStr) ? 'Schedule Special' : 'Schedule'}
+              </button>
+            </div>
           </div>
 
           {selectedDayTasks.length === 0 ? (
             <div className="p-8 text-center rounded-xl bg-neutral-50 dark:bg-neutral-800/40 border border-dashed border-neutral-200 dark:border-neutral-700">
               <Clock4 className="w-6 h-6 text-neutral-400 mx-auto mb-2" />
               <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                No cleaning jobs on this day
+                {isWeekend(selectedDateStr) ? 'No special jobs scheduled on this weekend' : 'No cleaning jobs on this day'}
               </p>
+              {isWeekend(selectedDateStr) && (
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 max-w-xs mx-auto">
+                  Saturdays & Sundays are reserved for special tasks only. Client recurring tasks are scheduled Monday to Friday.
+                </p>
+              )}
               <button
                 onClick={() => onAddNewTask(selectedDateStr)}
                 className="mt-3 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#FFB509] text-neutral-950 hover:bg-[#EAA300] transition-colors"
               >
-                + Add Job for this Date
+                {isWeekend(selectedDateStr) ? '+ Add Special Job for this Date' : '+ Add Job for this Date'}
               </button>
             </div>
           ) : (
@@ -349,8 +394,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
-                              {task.jobType}
+                              {task.clientName || 'Client Unspecified'}
                             </h4>
+                            <span className="text-[11px] text-neutral-500 dark:text-neutral-400 font-medium">
+                              · {task.jobType}
+                            </span>
                             {isRecurringFrequency(task.frequency) && (
                               <span
                                 className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
@@ -370,9 +418,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         </div>
                       </div>
 
-                      <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300">
-                        {task.invoiceNumber}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300">
+                          {task.invoiceNumber}
+                        </span>
+                        {(() => {
+                          const meta = getConfirmationStatusMeta(task.confirmationStatus);
+                          return (
+                            <button
+                              onClick={() => onSendConfirmation(task)}
+                              title="Click to Send Confirmation or update status"
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold border transition-transform hover:scale-105 ${meta.bgClass} ${meta.textClass} ${meta.borderClass}`}
+                            >
+                              <span className={`w-1 h-1 rounded-full ${meta.dotClass}`} />
+                              <span>{meta.label}</span>
+                            </button>
+                          );
+                        })()}
+                      </div>
                     </div>
 
                     <div className="mt-2 text-xs text-neutral-600 dark:text-neutral-300 flex items-start gap-1">
@@ -389,6 +452,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onSendConfirmation(task)}
+                          className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md transition-colors"
+                          title="Send Confirmation via WhatsApp, Messenger, SMS"
+                        >
+                          <Send className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                          <span>Confirm</span>
+                        </button>
                         <span className="font-mono-numbers font-bold text-neutral-900 dark:text-white">
                           {task.payType === 'Fixed Price'
                             ? formatCurrency(task.rate)

@@ -220,6 +220,106 @@ export const exportAllDataToExcel = (tasks: Task[], cleaners: Cleaner[], paySumm
   triggerDownloadWorkbook(wb, `DBuzzingBees_Export_${timestamp}.xlsx`);
 };
 
+// Export comprehensive financial summary for any period (Weekly, Monthly, Multi-Month, or Full Year)
+export const exportFinancialPeriodExcel = (
+  summaries: CleanerPaySummary[],
+  periodLabel: string,
+  periodType: string,
+  monthlyBreakdown?: Array<{
+    monthLabel: string;
+    taskCount: number;
+    hoursWorked: number;
+    totalInvoiced: number;
+    cleanerWages: number;
+    totalPay: number;
+    margin: number;
+    marginPercent: number;
+  }>,
+  allPeriodTasks?: Task[]
+) => {
+  const wb = XLSX.utils.book_new();
+
+  const totalPayout = summaries.reduce((sum, s) => sum + s.totalPay, 0);
+  const totalInvoiced = summaries.reduce((sum, s) => sum + s.totalInvoiced, 0);
+  const totalMargin = totalInvoiced - totalPayout;
+  const totalHours = summaries.reduce((sum, s) => sum + s.completedHours, 0);
+  const totalTasks = summaries.reduce((sum, s) => sum + s.taskCount, 0);
+  const marginPercent = totalInvoiced > 0 ? (totalMargin / totalInvoiced) * 100 : 0;
+
+  // 1. Executive Summary Sheet
+  const summarySheetData = [
+    { 'Financial Metric': 'Report Title', 'Value': `DBuzzingBees Financial Statement` },
+    { 'Financial Metric': 'Report Period Type', 'Value': periodType },
+    { 'Financial Metric': 'Period Range', 'Value': periodLabel },
+    { 'Financial Metric': 'Total Invoiced to Clients', 'Value': `$${totalInvoiced.toFixed(2)}` },
+    { 'Financial Metric': 'Total Cleaner Payout (Wages + Allowances)', 'Value': `$${totalPayout.toFixed(2)}` },
+    { 'Financial Metric': 'Gross Business Margin', 'Value': `$${totalMargin.toFixed(2)}` },
+    { 'Financial Metric': 'Profit Margin %', 'Value': `${marginPercent.toFixed(1)}%` },
+    { 'Financial Metric': 'Total Completed Hours', 'Value': `${totalHours.toFixed(1)} hrs` },
+    { 'Financial Metric': 'Total Cleans Recorded', 'Value': totalTasks },
+    { 'Financial Metric': 'Active Cleaners in Period', 'Value': summaries.filter(s => s.taskCount > 0).length },
+  ];
+  const wsSummary = XLSX.utils.json_to_sheet(summarySheetData);
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Financial Overview');
+
+  // 2. Cleaners Payroll Breakdown Sheet
+  const cleanersData = summaries.map((s) => ({
+    'Cleaner Name': s.cleanerName,
+    'Base Hourly Rate ($)': `$${s.hourlyRate.toFixed(2)}`,
+    'Completed Hours': s.completedHours,
+    'Scheduled Hours': s.scheduledHours,
+    'Hourly Wages ($)': `$${s.regularPay.toFixed(2)}`,
+    'Special Task Allowance ($)': `$${s.specialTaskPay.toFixed(2)}`,
+    'Total Net Pay ($)': `$${s.totalPay.toFixed(2)}`,
+    'Client Invoiced ($)': `$${s.totalInvoiced.toFixed(2)}`,
+    'Gross Margin ($)': `$${s.margin.toFixed(2)}`,
+    'Margin %': `${s.totalInvoiced > 0 ? ((s.margin / s.totalInvoiced) * 100).toFixed(1) : '0.0'}%`,
+    'Assigned Jobs Count': s.taskCount,
+  }));
+  const wsCleaners = XLSX.utils.json_to_sheet(cleanersData);
+  XLSX.utils.book_append_sheet(wb, wsCleaners, 'Cleaners Breakdown');
+
+  // 3. Monthly Breakdown Sheet (if present)
+  if (monthlyBreakdown && monthlyBreakdown.length > 0) {
+    const monthlyData = monthlyBreakdown.map((m) => ({
+      'Month': m.monthLabel,
+      'Jobs Completed': m.taskCount,
+      'Hours Worked': m.hoursWorked,
+      'Client Invoiced ($)': `$${m.totalInvoiced.toFixed(2)}`,
+      'Cleaner Wages ($)': `$${m.cleanerWages.toFixed(2)}`,
+      'Total Cleaner Payout ($)': `$${m.totalPay.toFixed(2)}`,
+      'Gross Margin ($)': `$${m.margin.toFixed(2)}`,
+      'Margin %': `${m.marginPercent.toFixed(1)}%`,
+    }));
+    const wsMonthly = XLSX.utils.json_to_sheet(monthlyData);
+    XLSX.utils.book_append_sheet(wb, wsMonthly, 'Monthly Performance');
+  }
+
+  // 4. Tasks Detail Sheet (if present)
+  if (allPeriodTasks && allPeriodTasks.length > 0) {
+    const tasksData = allPeriodTasks.map((t) => ({
+      'Date': t.date,
+      'Client Name': t.clientName || 'N/A',
+      'Client Number': t.clientNumber || '',
+      'Job Type': t.jobType,
+      'Address': t.address,
+      'Hours': t.fixHour,
+      'Rate': t.rate,
+      'Pay Type': t.payType,
+      'Payment Term': t.paymentTerm,
+      'Invoice #': t.invoiceNumber,
+      'Invoiced Total ($)': t.payType === 'Fixed Price' ? t.rate : t.rate * t.fixHour,
+      'Cleaners Count': t.assignedCleanerIds.length,
+      'Completed': t.completed ? 'Yes' : 'No',
+    }));
+    const wsTasks = XLSX.utils.json_to_sheet(tasksData);
+    XLSX.utils.book_append_sheet(wb, wsTasks, 'All Jobs Detail');
+  }
+
+  const cleanLabel = periodLabel.replace(/[^\w-]/g, '_').substring(0, 30);
+  triggerDownloadWorkbook(wb, `DBuzzingBees_Financial_${periodType}_${cleanLabel}.xlsx`);
+};
+
 // Export individual pay summary
 export const exportWeeklyPaySlipExcel = (paySummary: CleanerPaySummary, weekLabel: string) => {
   const wb = XLSX.utils.book_new();
@@ -270,10 +370,8 @@ export const exportWeeklyPaySlipExcel = (paySummary: CleanerPaySummary, weekLabe
   // Tasks breakdown
   const tasksBreakdown = paySummary.tasks.map(t => ({
     'Date': t.date,
+    'Client Name': t.clientName || 'N/A',
     'Invoice #': t.invoiceNumber,
-    'Job Type': t.jobType,
-    'Address': t.address,
-    'Client': t.clientName || 'N/A',
     'Hours': t.fixHour,
     'Cleaners on Job': t.assignedCleanerIds.length,
     'Pay Share ($)': ((t.fixHour * paySummary.hourlyRate) / (t.assignedCleanerIds.length || 1)).toFixed(2),

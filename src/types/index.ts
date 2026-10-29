@@ -27,6 +27,22 @@ export type Frequency =
   | 'others'
   | string;
 
+export type ConfirmationStatus = 'not_sent' | 'sent' | 'confirmed' | 'needs_reschedule';
+
+export type ConfirmationChannel = 'whatsapp' | 'messenger' | 'sms';
+
+export interface ConfirmationLog {
+  id: string;
+  timestamp: string; // ISO string
+  channel: ConfirmationChannel;
+  staffName: string;
+  staffUsername?: string;
+  status: ConfirmationStatus;
+  recipient: string; // phone number, messenger handle, etc.
+  messagePreview?: string;
+  notes?: string;
+}
+
 export interface Task {
   id: string;
   jobType: JobType | string;
@@ -35,6 +51,8 @@ export interface Task {
   clientName?: string;
   clientPhone?: string;
   clientEmail?: string;
+  clientMessenger?: string; // e.g. "sarah.smith" or Facebook profile/page link
+  clientPreferredChannel?: 'whatsapp' | 'messenger' | 'sms' | 'any';
   fixHour: number; // e.g. 3.5 hrs
   rate: number; // charge rate e.g. $45/hr or fixed $160
   payType: PayType; // Hourly or Fixed Price
@@ -42,6 +60,7 @@ export interface Task {
   invoiceNumber: string; // e.g. "INV-2026-101"
   assignedCleanerIds: string[]; // cleaner IDs
   remarks: string;
+  specialInstructions?: string; // Add-ons, key codes, pets, alarms, specific requests
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   endTime: string; // HH:mm
@@ -52,6 +71,12 @@ export interface Task {
   recurrence?: RecurrenceType;
   nextInstanceGenerated?: boolean;
   seriesId?: string;
+  
+  // Confirmation state
+  confirmationStatus?: ConfirmationStatus;
+  confirmationLogs?: ConfirmationLog[];
+  lastConfirmationSentAt?: string;
+  lastConfirmationChannel?: ConfirmationChannel;
 }
 
 export interface Cleaner {
@@ -65,10 +90,25 @@ export interface Cleaner {
   notes?: string;
 }
 
+export type StaffRole = 'admin' | 'manager' | 'supervisor' | 'staff';
+
+export interface StaffUser {
+  id: string;
+  username: string;
+  name: string;
+  password?: string;
+  role: StaffRole;
+  email?: string;
+  phone?: string;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  lastLogin?: string;
+}
+
 export interface UserSession {
   username: string;
   name: string;
-  role: 'admin' | 'manager';
+  role: StaffRole | string;
   loginTime: number;
   expiresAt: number; // timestamp
   rememberMe: boolean;
@@ -92,6 +132,21 @@ export interface CleanerPaySummary {
 export interface CleanerWeeklyPaymentRecord {
   isPaid: boolean;
   paidAt?: string;
+}
+
+export interface ConfirmationTemplate {
+  id: string;
+  name: string;
+  content: string;
+  isDefault?: boolean;
+}
+
+export interface CompanySettings {
+  businessName: string;
+  contactPhone: string;
+  contactEmail: string;
+  facebookPage: string; // Facebook Page username or ID for m.me link
+  confirmationMessageTemplate: string;
 }
 
 export interface ImportPreviewRow {

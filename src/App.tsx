@@ -9,6 +9,8 @@ import { CleanerManagementView } from './components/CleanerManagementView';
 import { PayAndInvoiceView } from './components/PayAndInvoiceView';
 import { TaskModal } from './components/TaskModal';
 import { ImportExportModal } from './components/ImportExportModal';
+import { StaffUsersModal } from './components/StaffUsersModal';
+import { SendConfirmationModal } from './components/SendConfirmationModal';
 
 import { Task, Cleaner, UserSession, CleanerPaySummary } from './types';
 import { 
@@ -26,7 +28,7 @@ import {
   getInitialTasks
 } from './services/storage';
 import { exportAllDataToExcel } from './services/excelService';
-import { generateNextRecurringTask, formatDate } from './utils/formatters';
+import { formatDate } from './utils/formatters';
 
 export default function App() {
   // Theme state
@@ -48,6 +50,12 @@ export default function App() {
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [taskModalDefaultDate, setTaskModalDefaultDate] = useState<string | undefined>(undefined);
   const [importExportModalOpen, setImportExportModalOpen] = useState(false);
+  const [staffUsersModalOpen, setStaffUsersModalOpen] = useState(false);
+
+  // Send Confirmation modal state (Single job or batch)
+  const [confirmationTask, setConfirmationTask] = useState<Task | null>(null);
+  const [confirmationBulkTasks, setConfirmationBulkTasks] = useState<Task[] | null>(null);
+  const [confirmationModalOpen, setConfirmationModalOpen] = useState(false);
 
   // Floating Toast notification for auto-scheduled recurring tasks
   const [recurringToast, setRecurringToast] = useState<{
@@ -65,7 +73,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [recurringToast]);
 
-  // Initialize theme on mount
+  // Initialize theme on mount and when changed
   useEffect(() => {
     saveTheme(theme);
   }, [theme]);
@@ -76,7 +84,7 @@ export default function App() {
     sessionRef.current = session;
   }, [session]);
 
-  // Check session on mount and listen to periodic expiration checks
+  // Check session on mount and listen to periodic expiration checks (30-minute inactivity auto-logout)
   useEffect(() => {
     const active = getActiveSession();
     if (active) {
@@ -91,11 +99,11 @@ export default function App() {
     const checkInterval = setInterval(() => {
       const current = getActiveSession();
       if (!current && sessionRef.current) {
-        // Session expired!
+        // Session expired automatically after 30 minutes of inactivity
         setSession(null);
         setTasks([]);
         setCleaners([]);
-        setSessionExpiredMessage('Your session timed out due to security inactivity. Please sign in again.');
+        setSessionExpiredMessage('Your session timed out after 30 minutes of inactivity. Please sign in again.');
       }
     }, 2000);
 
@@ -161,14 +169,6 @@ export default function App() {
     }
   };
 
-  const handleSimulateExpire = () => {
-    clearSession();
-    setSession(null);
-    setTasks([]);
-    setCleaners([]);
-    setSessionExpiredMessage('Security check: Simulated session timeout triggered. Redirected back to sign-in page.');
-  };
-
   // Task Operations
   const handleToggleComplete = useCallback((taskId: string) => {
     setTasks((prev) => {
@@ -231,6 +231,37 @@ export default function App() {
     setTaskToEdit(task);
     setTaskModalDefaultDate(undefined);
     setTaskModalOpen(true);
+  };
+
+  // Confirmation Modal Handlers
+  const handleOpenSendConfirmation = useCallback((task: Task) => {
+    setConfirmationTask(task);
+    setConfirmationBulkTasks(null);
+    setConfirmationModalOpen(true);
+  }, []);
+
+  const handleOpenBulkConfirmation = useCallback((selectedTasks: Task[]) => {
+    setConfirmationBulkTasks(selectedTasks);
+    setConfirmationTask(null);
+    setConfirmationModalOpen(true);
+  }, []);
+
+  const handleUpdateTaskFromConfirmation = (updatedTask: Task) => {
+    setTasks((prev) => {
+      const updated = prev.map((t) => (t.id === updatedTask.id ? updatedTask : t));
+      saveTasks(updated);
+      return updated;
+    });
+    setConfirmationTask((prev) => (prev?.id === updatedTask.id ? updatedTask : prev));
+  };
+
+  const handleBulkUpdateTasksFromConfirmation = (updatedBatch: Task[]) => {
+    setTasks((prev) => {
+      const idMap = new Map(updatedBatch.map((t) => [t.id, t]));
+      const updated = prev.map((t) => idMap.get(t.id) || t);
+      saveTasks(updated);
+      return updated;
+    });
   };
 
   // Cleaner Operations
@@ -304,7 +335,7 @@ export default function App() {
         session={session}
         onSignOut={handleSignOut}
         onExtendSession={handleExtendSession}
-        onSimulateExpire={handleSimulateExpire}
+        onOpenStaffUsers={() => setStaffUsersModalOpen(true)}
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onOpenImportExport={() => setImportExportModalOpen(true)}
@@ -323,6 +354,8 @@ export default function App() {
             onAddNewTask={handleOpenAddNewTask}
             onOpenImportExport={() => setImportExportModalOpen(true)}
             onNavigateToTab={(tab) => setCurrentTab(tab)}
+            onSendConfirmation={handleOpenSendConfirmation}
+            onBulkSendConfirmation={handleOpenBulkConfirmation}
           />
         )}
 
@@ -336,6 +369,8 @@ export default function App() {
             onDuplicateTask={handleDuplicateTask}
             onAddNewTask={() => handleOpenAddNewTask()}
             onExportTasks={handleExportFilteredTasks}
+            onSendConfirmation={handleOpenSendConfirmation}
+            onBulkSendConfirmation={handleOpenBulkConfirmation}
           />
         )}
 
@@ -346,6 +381,8 @@ export default function App() {
             onToggleComplete={handleToggleComplete}
             onEditTask={handleOpenEditTask}
             onAddNewTask={handleOpenAddNewTask}
+            onSendConfirmation={handleOpenSendConfirmation}
+            onBulkSendConfirmation={handleOpenBulkConfirmation}
           />
         )}
 
@@ -378,7 +415,14 @@ export default function App() {
             <span>Cleaning Task & Scheduling Manager</span>
           </div>
           <div className="flex items-center gap-4">
-            <span>Signed in as <strong className="text-neutral-800 dark:text-neutral-200">{session.name}</strong></span>
+            <span>Signed in as <strong className="text-neutral-800 dark:text-neutral-200">{session.name}</strong> ({session.role})</span>
+            <span>·</span>
+            <button
+              onClick={() => setStaffUsersModalOpen(true)}
+              className="hover:underline text-neutral-600 dark:text-neutral-300 flex items-center gap-1"
+            >
+              <span>Staff Users</span>
+            </button>
             <span>·</span>
             <button
               onClick={() => setImportExportModalOpen(true)}
@@ -398,6 +442,7 @@ export default function App() {
         taskToEdit={taskToEdit}
         cleaners={cleaners}
         defaultDate={taskModalDefaultDate}
+        tasks={tasks}
       />
 
       {/* Import & Export Modal */}
@@ -409,6 +454,31 @@ export default function App() {
         onImportComplete={handleImportComplete}
         onResetData={handleResetData}
       />
+
+      {/* Staff Users Management Modal */}
+      <StaffUsersModal
+        isOpen={staffUsersModalOpen}
+        onClose={() => setStaffUsersModalOpen(false)}
+        currentUser={session}
+      />
+
+      {/* Send Confirmation Modal (WhatsApp, Messenger, SMS, Email, Clipboard) */}
+      {confirmationModalOpen && (
+        <SendConfirmationModal
+          isOpen={confirmationModalOpen}
+          onClose={() => {
+            setConfirmationModalOpen(false);
+            setConfirmationTask(null);
+            setConfirmationBulkTasks(null);
+          }}
+          task={confirmationTask}
+          tasks={confirmationBulkTasks || undefined}
+          cleaners={cleaners}
+          currentUser={session}
+          onUpdateTask={handleUpdateTaskFromConfirmation}
+          onBulkUpdateTasks={handleBulkUpdateTasksFromConfirmation}
+        />
+      )}
 
       {/* Auto-Scheduled Recurring Task Toast */}
       {recurringToast && (

@@ -251,8 +251,65 @@ export const formatFrequency = (freq: string): string => {
 };
 
 /**
+ * Checks if a given date string (YYYY-MM-DD) falls on a weekend (Saturday or Sunday).
+ */
+export const isWeekend = (dateStr: string): boolean => {
+  if (!dateStr) return false;
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d, 12, 0, 0);
+    const day = date.getDay();
+    return day === 0 || day === 6; // 0 = Sun, 6 = Sat
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Adjusts a Date object to ensure it falls strictly on a weekday (Monday to Friday).
+ * Used because recurring client tasks cannot fall on Saturday or Sunday (weekends are reserved for special tasks).
+ * - Saturday (6) -> Friday (-1 day)
+ * - Sunday (0) -> if preferFriday (e.g. end-of-month), Friday (-2 days); otherwise Monday (+1 day)
+ */
+export const ensureWeekdayDate = (d: Date, preferFridayForSunday: boolean = false): Date => {
+  const adjusted = new Date(d);
+  const day = adjusted.getDay();
+  if (day === 6) {
+    // Saturday -> Friday
+    adjusted.setDate(adjusted.getDate() - 1);
+  } else if (day === 0) {
+    // Sunday -> Friday or Monday
+    if (preferFridayForSunday) {
+      adjusted.setDate(adjusted.getDate() - 2);
+    } else {
+      adjusted.setDate(adjusted.getDate() + 1);
+    }
+  }
+  return adjusted;
+};
+
+/**
+ * Adjusts a YYYY-MM-DD date string to the nearest weekday if it falls on a weekend.
+ */
+export const adjustDateStringToWeekday = (dateStr: string, preferFriday: boolean = false): string => {
+  if (!dateStr || !isWeekend(dateStr)) return dateStr;
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d, 12, 0, 0);
+    const adjusted = ensureWeekdayDate(date, preferFriday);
+    const yr = adjusted.getFullYear();
+    const mo = String(adjusted.getMonth() + 1).padStart(2, '0');
+    const da = String(adjusted.getDate()).padStart(2, '0');
+    return `${yr}-${mo}-${da}`;
+  } catch {
+    return dateStr;
+  }
+};
+
+/**
  * Calculates the next scheduled date (YYYY-MM-DD) based on recurrence setting.
  * Supports: 'daily' (+1 day), 'weekly' (+7 days), 'monthly' (+1 month with day-clamping).
+ * Strictly guarantees that recurring client tasks skip weekends (Saturday and Sunday).
  */
 export const calculateNextScheduledDate = (
   dateStr: string,
@@ -278,6 +335,15 @@ export const calculateNextScheduledDate = (
       if (date.getMonth() !== (targetMonth % 12)) {
         date.setDate(0);
       }
+    }
+
+    // Strict rule: Recurring client tasks must NEVER fall on Saturday or Sunday
+    // If next date falls on Saturday, advance to Monday (+2 days)
+    // If next date falls on Sunday, advance to Monday (+1 day)
+    if (date.getDay() === 6) {
+      date.setDate(date.getDate() + 2);
+    } else if (date.getDay() === 0) {
+      date.setDate(date.getDate() + 1);
     }
 
     const y = date.getFullYear();
@@ -341,6 +407,7 @@ export const isRecurringFrequency = (freq?: string): boolean => {
 /**
  * Returns all scheduled dates (YYYY-MM-DD) across the next 6 months for a given frequency.
  * Starts from startDateStr and steps through 6 calendar months (approx 183 days).
+ * Strictly guarantees that recurring client tasks NEVER fall on Saturday or Sunday.
  */
 export const getScheduledDatesForSixMonths = (
   startDateStr: string,
@@ -349,12 +416,14 @@ export const getScheduledDatesForSixMonths = (
   if (!startDateStr || !isRecurringFrequency(frequency)) return [startDateStr];
 
   try {
-    const [y, m, d] = startDateStr.split('-').map(Number);
+    // If the base startDateStr is on a weekend, adjust it to a weekday first
+    const sanitizedStartStr = adjustDateStringToWeekday(startDateStr, false);
+    const [y, m, d] = sanitizedStartStr.split('-').map(Number);
     const start = new Date(y, m - 1, d, 12, 0, 0);
     const cutoff = new Date(y, m - 1, d, 12, 0, 0);
     cutoff.setMonth(cutoff.getMonth() + 6);
 
-    const dates: string[] = [startDateStr];
+    const dates: string[] = [sanitizedStartStr];
     const toDateStr = (date: Date) => {
       const yr = date.getFullYear();
       const mo = String(date.getMonth() + 1).padStart(2, '0');
@@ -372,7 +441,16 @@ export const getScheduledDatesForSixMonths = (
         curr = new Date(curr);
         curr.setDate(curr.getDate() + days);
         if (curr > cutoff) break;
-        dates.push(toDateStr(curr));
+
+        // Ensure never Saturday (6) or Sunday (0)
+        let adjusted = ensureWeekdayDate(curr);
+        // Avoid duplicate dates if adjustment lands on previous date
+        while (dates.includes(toDateStr(adjusted)) || adjusted.getDay() === 0 || adjusted.getDay() === 6) {
+          adjusted.setDate(adjusted.getDate() + 1);
+        }
+        if (adjusted > cutoff) break;
+        dates.push(toDateStr(adjusted));
+        curr = adjusted;
         step++;
       }
     } else if (norm === 'weekly') {
@@ -381,7 +459,8 @@ export const getScheduledDatesForSixMonths = (
         curr = new Date(curr);
         curr.setDate(curr.getDate() + 7);
         if (curr > cutoff) break;
-        dates.push(toDateStr(curr));
+        const adjusted = ensureWeekdayDate(curr);
+        dates.push(toDateStr(adjusted));
       }
     } else if (norm === 'fortnightly') {
       let curr = new Date(start);
@@ -389,7 +468,8 @@ export const getScheduledDatesForSixMonths = (
         curr = new Date(curr);
         curr.setDate(curr.getDate() + 14);
         if (curr > cutoff) break;
-        dates.push(toDateStr(curr));
+        const adjusted = ensureWeekdayDate(curr);
+        dates.push(toDateStr(adjusted));
       }
     } else if (norm === 'every-3rd-week') {
       let curr = new Date(start);
@@ -397,7 +477,8 @@ export const getScheduledDatesForSixMonths = (
         curr = new Date(curr);
         curr.setDate(curr.getDate() + 21);
         if (curr > cutoff) break;
-        dates.push(toDateStr(curr));
+        const adjusted = ensureWeekdayDate(curr);
+        dates.push(toDateStr(adjusted));
       }
     } else if (norm === 'monthly') {
       let monthStep = 1;
@@ -409,7 +490,12 @@ export const getScheduledDatesForSixMonths = (
         const clampedDay = Math.min(d, maxDays);
         const curr = new Date(yr, mo, clampedDay, 12, 0, 0);
         if (curr > cutoff) break;
-        dates.push(toDateStr(curr));
+        // If monthly lands on Saturday -> Friday (-1 day); if Sunday -> Monday (+1 day)
+        const adjusted = ensureWeekdayDate(curr);
+        const dStr = toDateStr(adjusted);
+        if (!dates.includes(dStr)) {
+          dates.push(dStr);
+        }
         monthStep++;
       }
     } else if (norm === 'end-of-month') {
@@ -418,9 +504,14 @@ export const getScheduledDatesForSixMonths = (
         const targetMonthIndex = (m - 1) + monthStep;
         const yr = y + Math.floor(targetMonthIndex / 12);
         const mo = targetMonthIndex % 12;
-        const curr = new Date(yr, mo + 1, 0, 12, 0, 0);
-        if (curr > cutoff) break;
-        dates.push(toDateStr(curr));
+        const lastDay = new Date(yr, mo + 1, 0, 12, 0, 0);
+        if (lastDay > cutoff) break;
+        // For end of month, if Saturday or Sunday, shift to Friday so it stays in that month
+        const adjusted = ensureWeekdayDate(lastDay, true);
+        const dStr = toDateStr(adjusted);
+        if (!dates.includes(dStr)) {
+          dates.push(dStr);
+        }
         monthStep++;
       }
     } else if (norm === 'every-2-months') {
@@ -433,14 +524,19 @@ export const getScheduledDatesForSixMonths = (
         const clampedDay = Math.min(d, maxDays);
         const curr = new Date(yr, mo, clampedDay, 12, 0, 0);
         if (curr > cutoff) break;
-        dates.push(toDateStr(curr));
+        const adjusted = ensureWeekdayDate(curr);
+        const dStr = toDateStr(adjusted);
+        if (!dates.includes(dStr)) {
+          dates.push(dStr);
+        }
         monthStep += 2;
       }
     }
 
-    return dates;
+    // Final safety filter: strictly ensure NO weekend date is ever returned
+    return Array.from(new Set(dates)).filter((ds) => !isWeekend(ds));
   } catch {
-    return [startDateStr];
+    return [startDateStr].filter((ds) => !isWeekend(ds));
   }
 };
 
@@ -467,5 +563,35 @@ export const generateSixMonthRecurringTasks = (baseTask: Task): Task[] => {
   }));
 };
 
+/**
+ * Automatically calculates the next sequential client number (e.g. BBA0115).
+ * Inspects all existing tasks for client numbers of pattern BBAXXXX.
+ */
+export const getNextClientNumber = (tasks: Task[] = []): string => {
+  let maxNum = 0;
+  tasks.forEach((t) => {
+    if (t.clientNumber) {
+      const match = t.clientNumber.trim().match(/^BBA(\d+)$/i);
+      if (match) {
+        const val = parseInt(match[1], 10);
+        if (!isNaN(val) && val > maxNum) {
+          maxNum = val;
+        }
+      }
+    }
+  });
+  const nextNum = maxNum > 0 ? maxNum + 1 : 1;
+  return `BBA${String(nextNum).padStart(4, '0')}`;
+};
 
-
+/**
+ * Checks if a client name already exists in tasks and returns their client number.
+ */
+export const findExistingClientNumber = (tasks: Task[] = [], clientName: string): string | null => {
+  if (!clientName || !clientName.trim()) return null;
+  const target = clientName.trim().toLowerCase();
+  const found = tasks.find(
+    (t) => t.clientName && t.clientName.trim().toLowerCase() === target && t.clientNumber
+  );
+  return found?.clientNumber || null;
+};

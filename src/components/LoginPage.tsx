@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Lock, User, ShieldCheck, Sun, Moon, AlertCircle } from 'lucide-react';
 import { BeeLogo } from './BeeLogo';
+import { authenticateUser, loadStaffUsers } from '../services/storage';
 
 interface LoginPageProps {
   onLogin: (username: string, rememberMe: boolean) => void;
@@ -22,11 +23,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Available staff accounts for demo hint
+  const staffAccounts = loadStaffUsers();
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!username.trim()) {
+    const cleanUsername = username.trim();
+    if (!cleanUsername) {
       setError('Please enter your username.');
       return;
     }
@@ -37,16 +42,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
 
     setIsSubmitting(true);
-    // Simulate authentication delay for smooth UX
+    // Authentication check against configured staff users
     setTimeout(() => {
-      onLogin(username.trim(), rememberMe);
+      const authenticatedUser = authenticateUser(cleanUsername, password);
+      
+      if (!authenticatedUser) {
+        // Check if username exists but password was incorrect
+        const existingStaff = staffAccounts.find(
+          (u) => u.username.toLowerCase() === cleanUsername.toLowerCase()
+        );
+        if (existingStaff && existingStaff.status === 'inactive') {
+          setError('This staff account has been set to Inactive. Please contact an Administrator.');
+        } else {
+          setError('Invalid username or password. Please verify your credentials or use the demo credentials below.');
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
+      onLogin(authenticatedUser.username, rememberMe);
       setIsSubmitting(false);
-    }, 250);
+    }, 200);
   };
 
-  const handleFillDemo = () => {
-    setUsername('admin');
-    setPassword('buzzbee123');
+  const handleFillDemo = (demoUser = 'admin', demoPass = 'buzzbee123') => {
+    setUsername(demoUser);
+    setPassword(demoPass);
     setError(null);
   };
 
@@ -108,7 +129,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 htmlFor="username-input" 
                 className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5"
               >
-                Username or Staff Email
+                Username or Staff Account
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
@@ -122,7 +143,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. admin or manager"
+                  placeholder="e.g. admin or staff username"
                   className="block w-full pl-10 pr-3.5 py-2.5 text-sm bg-neutral-50 dark:bg-neutral-800/80 text-neutral-900 dark:text-white border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] transition-all"
                 />
               </div>
@@ -196,19 +217,39 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
           {/* Quick Demo Credentials Autofill */}
           <div className="mt-6 pt-5 border-t border-neutral-200 dark:border-neutral-800">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-neutral-500 dark:text-neutral-400">Default Demo Credentials:</span>
+            <div className="flex items-center justify-between text-xs mb-2">
+              <span className="text-neutral-500 dark:text-neutral-400">Registered Staff Accounts:</span>
               <button
                 type="button"
-                onClick={handleFillDemo}
+                onClick={() => handleFillDemo('admin', 'buzzbee123')}
                 className="font-bold text-amber-600 dark:text-amber-400 hover:underline focus:outline-none"
               >
-                Auto-fill Demo
+                Auto-fill Admin
               </button>
             </div>
-            <div className="mt-2 p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl text-xs text-neutral-600 dark:text-neutral-400 flex items-center justify-between font-mono">
-              <span>User: <strong className="text-neutral-900 dark:text-white">admin</strong></span>
-              <span>Pass: <strong className="text-neutral-900 dark:text-white">buzzbee123</strong></span>
+            
+            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+              {staffAccounts.map((account) => (
+                <div 
+                  key={account.id} 
+                  className="p-2 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl text-xs text-neutral-600 dark:text-neutral-400 flex items-center justify-between font-mono"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span>User: <strong className="text-neutral-900 dark:text-white">{account.username}</strong></span>
+                    <span className="text-[10px] uppercase font-sans font-bold px-1.5 py-0.2 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300">
+                      {account.role}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleFillDemo(account.username, account.password || 'buzzbee123')}
+                    className="text-[11px] font-sans text-amber-600 dark:text-amber-400 hover:underline"
+                  >
+                    Fill
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 

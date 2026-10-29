@@ -13,7 +13,8 @@ import {
   Menu, 
   X,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck
 } from 'lucide-react';
 import { UserSession } from '../types';
 import { BeeLogo } from './BeeLogo';
@@ -24,7 +25,7 @@ interface NavbarProps {
   session: UserSession | null;
   onSignOut: () => void;
   onExtendSession: () => void;
-  onSimulateExpire: () => void;
+  onOpenStaffUsers: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onOpenImportExport: () => void;
@@ -37,7 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   session,
   onSignOut,
   onExtendSession,
-  onSimulateExpire,
+  onOpenStaffUsers,
   theme,
   onToggleTheme,
   onOpenImportExport,
@@ -140,7 +141,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Excel Import/Export</span>
             </button>
 
-            {/* Session Expiry Countdown Indicator */}
+            {/* Staff Users Trigger */}
+            <button
+              onClick={onOpenStaffUsers}
+              title="Manage Staff Users & System Access"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-[#FFB509]" />
+              <span>Staff Users</span>
+            </button>
+
+            {/* Session Expiry Countdown Indicator (Automatic 30-minute inactivity logout) */}
             {session && (
               <div 
                 className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded-lg border transition-colors ${
@@ -148,7 +159,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     ? 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950/50 dark:border-red-800 dark:text-red-300' 
                     : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/60 text-neutral-600 dark:text-neutral-300'
                 }`}
-                title="Active login session remaining time"
+                title="Active login session remaining time (auto-expires after 30 minutes of inactivity)"
               >
                 {isLowTime ? (
                   <AlertTriangle className="w-3.5 h-3.5 text-red-500 animate-pulse" />
@@ -164,15 +175,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="p-1 hover:text-amber-600 dark:hover:text-amber-400 rounded transition-colors"
                 >
                   <RefreshCw className="w-3 h-3" />
-                </button>
-
-                {/* Simulate expire button for user evaluation */}
-                <button
-                  onClick={onSimulateExpire}
-                  title="Test Session Expiration (Forces timeout to verify redirect to sign-in)"
-                  className="text-[10px] uppercase font-bold tracking-wider px-1 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-900/60 transition-colors"
-                >
-                  Test Expire
                 </button>
               </div>
             )}
@@ -250,6 +252,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800 flex flex-col gap-2">
             <button
               onClick={() => {
+                onOpenStaffUsers();
+                setMobileMenuOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
+            >
+              <ShieldCheck className="w-4 h-4 text-[#FFB509]" />
+              <span>Staff Users & Access</span>
+            </button>
+
+            <button
+              onClick={() => {
                 onOpenImportExport();
                 setMobileMenuOpen(false);
               }}
@@ -261,15 +274,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {session && (
               <div className="flex items-center justify-between px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800/60 rounded-lg">
-                <span className="text-neutral-500 dark:text-neutral-400">Session expires in:</span>
+                <span className="text-neutral-500 dark:text-neutral-400">Session auto-expires in:</span>
                 <span className="font-mono font-semibold text-neutral-900 dark:text-neutral-100">
                   {formatCountdown(timeLeftSeconds)}
                 </span>
                 <button
-                  onClick={onSimulateExpire}
-                  className="px-2 py-1 text-[11px] rounded bg-neutral-200 dark:bg-neutral-700 font-semibold text-red-600 dark:text-red-400"
+                  onClick={onExtendSession}
+                  className="px-2 py-1 text-[11px] rounded bg-amber-100 dark:bg-amber-900/60 font-semibold text-amber-800 dark:text-amber-200"
                 >
-                  Test Timeout
+                  +30m
                 </button>
               </div>
             )}

@@ -19,11 +19,13 @@ import {
   FileText,
   Repeat,
   Check,
-  X
+  X,
+  Send
 } from 'lucide-react';
-import { Task, Cleaner } from '../types';
+import { Task, Cleaner, ConfirmationStatus } from '../types';
 import { DATA_CORRECTIONS_LOG } from '../data/spreadsheetData';
-import { formatCurrency, formatDate, formatTime12h, formatFrequency, isRecurringFrequency } from '../utils/formatters';
+import { formatCurrency, formatDate, formatTime12h, formatFrequency, isRecurringFrequency, isWeekend } from '../utils/formatters';
+import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
 
 interface TaskListViewProps {
   tasks: Task[];
@@ -34,6 +36,8 @@ interface TaskListViewProps {
   onDuplicateTask: (task: Task) => void;
   onAddNewTask: () => void;
   onExportTasks: (tasksToExport: Task[]) => void;
+  onSendConfirmation: (task: Task) => void;
+  onBulkSendConfirmation?: (tasks: Task[]) => void;
 }
 
 export const TaskListView: React.FC<TaskListViewProps> = ({
@@ -45,6 +49,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   onDuplicateTask,
   onAddNewTask,
   onExportTasks,
+  onSendConfirmation,
+  onBulkSendConfirmation,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed'>('all');
@@ -54,6 +60,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   const [frequencyFilter, setFrequencyFilter] = useState<string>('all');
   const [jobTypeFilter, setJobTypeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'upcoming' | 'past'>('all');
+  const [confirmationFilter, setConfirmationFilter] = useState<'all' | ConfirmationStatus>('all');
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
@@ -153,9 +161,15 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
       if (dateFilter === 'upcoming' && t.date < todayStr) return false;
       if (dateFilter === 'past' && t.date >= todayStr) return false;
 
+      // Confirmation Status
+      if (confirmationFilter !== 'all') {
+        const cStatus = t.confirmationStatus || 'not_sent';
+        if (cStatus !== confirmationFilter) return false;
+      }
+
       return true;
     }).sort((a, b) => b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime));
-  }, [tasks, searchQuery, statusFilter, cleanerFilter, clientFilter, paymentTermFilter, frequencyFilter, jobTypeFilter, dateFilter, todayStr]);
+  }, [tasks, searchQuery, statusFilter, cleanerFilter, clientFilter, paymentTermFilter, frequencyFilter, jobTypeFilter, dateFilter, confirmationFilter, todayStr]);
 
   const resetFilters = () => {
     setSearchQuery('');
@@ -166,6 +180,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     setFrequencyFilter('all');
     setJobTypeFilter('all');
     setDateFilter('all');
+    setConfirmationFilter('all');
+    setSelectedTaskIds([]);
   };
 
   const hasActiveFilters =
@@ -176,7 +192,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     paymentTermFilter !== 'all' ||
     frequencyFilter !== 'all' ||
     jobTypeFilter !== 'all' ||
-    dateFilter !== 'all';
+    dateFilter !== 'all' ||
+    confirmationFilter !== 'all';
 
   return (
     <div className="space-y-6 pb-12">
@@ -378,6 +395,22 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
               <option value="past">Past Jobs</option>
             </select>
           </div>
+
+          {/* Confirmation Status Filter */}
+          <div>
+            <label className="block text-[10px] font-bold uppercase text-neutral-500 mb-1">Confirmation</label>
+            <select
+              value={confirmationFilter}
+              onChange={(e) => setConfirmationFilter(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#FFB509]"
+            >
+              <option value="all">All Confirmations</option>
+              <option value="not_sent">Not Sent</option>
+              <option value="sent">Confirmation Sent</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="needs_reschedule">Needs Reschedule</option>
+            </select>
+          </div>
         </div>
 
         {/* Clear Filters Indicator */}
@@ -441,9 +474,22 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-neutral-50 dark:bg-neutral-800/70 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-bold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
                 <tr>
+                  <th className="py-3.5 px-3 xl:px-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedTaskIds.length === filteredTasks.length && filteredTasks.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedTaskIds(filteredTasks.map((t) => t.id));
+                        else setSelectedTaskIds([]);
+                      }}
+                      className="rounded text-[#FFB509] focus:ring-[#FFB509]"
+                      title="Select all visible for bulk actions"
+                    />
+                  </th>
                   <th className="py-3.5 px-3 xl:px-4 w-12 text-center">Done</th>
                   <th className="py-3.5 px-3 xl:px-4 whitespace-nowrap">Date & Time</th>
                   <th className="py-3.5 px-3 xl:px-4 min-w-[200px]">Client & Contact</th>
+                  <th className="py-3.5 px-3 xl:px-4 whitespace-nowrap">Confirmation</th>
                   <th className="py-3.5 px-3 xl:px-4 min-w-[200px]">Job & Address</th>
                   <th className="py-3.5 px-3 xl:px-4 text-right whitespace-nowrap">Duration</th>
                   <th className="py-3.5 px-3 xl:px-4 text-right whitespace-nowrap">Rate & Total</th>
@@ -452,7 +498,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                   <th className="py-3.5 px-3 xl:px-4 whitespace-nowrap">Invoice #</th>
                   <th className="py-3.5 px-3 xl:px-4 min-w-[130px]">Cleaners</th>
                   <th className="py-3.5 px-3 xl:px-4 whitespace-nowrap">Freq</th>
-                  <th className="py-3.5 px-3 xl:px-4 text-right w-24 whitespace-nowrap">Actions</th>
+                  <th className="py-3.5 px-3 xl:px-4 text-right w-28 whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -465,6 +511,19 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                         task.completed ? 'opacity-70 bg-neutral-50/40 dark:bg-neutral-900/40' : ''
                       }`}
                     >
+                      {/* Bulk Select Checkbox */}
+                      <td className="py-3 px-3 xl:px-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedTaskIds.includes(task.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedTaskIds([...selectedTaskIds, task.id]);
+                            else setSelectedTaskIds(selectedTaskIds.filter((id) => id !== task.id));
+                          }}
+                          className="rounded text-[#FFB509] focus:ring-[#FFB509]"
+                        />
+                      </td>
+
                       {/* Mark Complete Checkbox */}
                       <td className="py-3 px-3 xl:px-4 text-center">
                         <button
@@ -482,8 +541,16 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
 
                       {/* Date & Time */}
                       <td className="py-3 px-3 xl:px-4 whitespace-nowrap">
-                        <div className="font-semibold text-neutral-900 dark:text-white flex items-center gap-1.5">
+                        <div className="font-semibold text-neutral-900 dark:text-white flex items-center gap-1.5 flex-wrap">
                           <span>{formatDate(task.date)}</span>
+                          {isWeekend(task.date) && (
+                            <span
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+                              title="Weekend: Special task slot"
+                            >
+                              Special
+                            </span>
+                          )}
                           {isRecurringFrequency(task.frequency) && (
                             <span
                               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80"
@@ -569,6 +636,23 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                         </div>
                       </td>
 
+                      {/* Confirmation Status Badge */}
+                      <td className="py-3 px-3 xl:px-4 whitespace-nowrap">
+                        {(() => {
+                          const meta = getConfirmationStatusMeta(task.confirmationStatus);
+                          return (
+                            <button
+                              onClick={() => onSendConfirmation(task)}
+                              title="Click to Send Confirmation or update status"
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all hover:scale-105 shadow-2xs ${meta.bgClass} ${meta.textClass} ${meta.borderClass}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${meta.dotClass}`} />
+                              <span>{meta.label}</span>
+                            </button>
+                          );
+                        })()}
+                      </td>
+
                       {/* Job & Address */}
                       <td className="py-3 px-3 xl:px-4 min-w-[200px] max-w-sm">
                         <div className="font-bold text-neutral-900 dark:text-white flex items-center gap-1.5">
@@ -651,6 +735,13 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       <td className="py-3 px-3 xl:px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           <button
+                            onClick={() => onSendConfirmation(task)}
+                            title="Send Booking Confirmation (WhatsApp, Messenger, SMS)"
+                            className="p-1.5 text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors"
+                          >
+                            <Send className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          </button>
+                          <button
                             onClick={() => onDuplicateTask(task)}
                             title="Duplicate task"
                             className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
@@ -705,6 +796,11 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                         </span>
                         <div className="flex items-center gap-1.5 text-xs text-neutral-500 mt-0.5 flex-wrap">
                           <span>{formatDate(task.date)}</span>
+                          {isWeekend(task.date) && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                              Special
+                            </span>
+                          )}
                           {isRecurringFrequency(task.frequency) && (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
                               <Repeat className="w-2.5 h-2.5" />
@@ -837,31 +933,77 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-neutral-100 dark:border-neutral-800">
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
                     <button
-                      onClick={() => onDuplicateTask(task)}
-                      className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
+                      onClick={() => onSendConfirmation(task)}
+                      className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                      title="Send Confirmation"
                     >
-                      Duplicate
+                      <Send className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Send Confirmation</span>
                     </button>
-                    <button
-                      onClick={() => onEditTask(task)}
-                      className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setTaskToDelete(task)}
-                      className="px-2 py-1 text-xs font-semibold rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                    >
-                      Delete
-                    </button>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => onDuplicateTask(task)}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        onClick={() => onEditTask(task)}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setTaskToDelete(task)}
+                        className="px-2 py-1 text-xs font-semibold rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
+      )}
+
+      {/* Floating Bulk Action Bar */}
+      {selectedTaskIds.length > 0 && (
+        <aside
+          role="region"
+          aria-label="Bulk actions"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 px-4 sm:px-6 py-3 rounded-2xl shadow-2xl border border-neutral-700 dark:border-neutral-200 flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4"
+        >
+          <span className="text-xs font-bold whitespace-nowrap">
+            {selectedTaskIds.length} {selectedTaskIds.length === 1 ? 'clean' : 'cleans'} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const selected = tasks.filter((t) => selectedTaskIds.includes(t.id));
+                if (onBulkSendConfirmation) {
+                  onBulkSendConfirmation(selected);
+                } else if (selected[0]) {
+                  onSendConfirmation(selected[0]);
+                }
+              }}
+              className="px-3.5 py-1.5 bg-[#FFB509] text-neutral-950 hover:bg-[#EAA300] font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-transform active:scale-95"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Send Confirmations (Bulk)</span>
+            </button>
+            <button
+              onClick={() => setSelectedTaskIds([])}
+              className="px-2 py-1 text-xs text-neutral-400 hover:text-white dark:hover:text-neutral-900 font-semibold"
+            >
+              Clear
+            </button>
+          </div>
+        </aside>
       )}
 
       {/* Delete Confirmation Modal */}

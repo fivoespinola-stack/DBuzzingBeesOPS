@@ -1,5 +1,7 @@
-import { Task, Cleaner, UserSession, CleanerWeeklyPaymentRecord, PaymentTerm } from '../types';
+import { Task, Cleaner, UserSession, CleanerWeeklyPaymentRecord, PaymentTerm, StaffUser, StaffRole, CompanySettings } from '../types';
 import { SPREADSHEET_CLEANERS, SPREADSHEET_TASKS, DATA_CORRECTIONS_LOG, DataCorrection } from '../data/spreadsheetData';
+import { isWeekend, adjustDateStringToWeekday } from '../utils/formatters';
+import { DEFAULT_COMPANY_SETTINGS } from '../utils/confirmationHelpers';
 
 export { DATA_CORRECTIONS_LOG, type DataCorrection };
 
@@ -8,6 +10,8 @@ const CLEANERS_STORAGE_KEY = 'dbuzzingbees_cleaners_v3';
 const SESSION_STORAGE_KEY = 'dbuzzingbees_session_v1';
 const THEME_STORAGE_KEY = 'dbuzzingbees_theme_v1';
 const CLEANER_PAYMENTS_STORAGE_KEY = 'dbuzzingbees_cleaner_weekly_payments_v1';
+const USERS_STORAGE_KEY = 'dbuzzingbees_staff_users_v1';
+const COMPANY_SETTINGS_STORAGE_KEY = 'dbuzzingbees_company_settings_v1';
 
 // Default session timeout: 30 minutes in milliseconds
 export const DEFAULT_SESSION_DURATION_MS = 30 * 60 * 1000;
@@ -68,12 +72,21 @@ export const loadTasks = (): Task[] => {
         (t.frequency && t.frequency !== 'one-off' && t.frequency !== 'flexible' && t.frequency !== 'others')
       );
 
+      // 4. Weekend enforcement: Recurring client tasks must never fall on Saturday or Sunday
+      let adjustedDate = t.date;
+      if (isRecurring && isWeekend(adjustedDate)) {
+        adjustedDate = adjustDateStringToWeekday(adjustedDate, false);
+      }
+
       return {
         ...t,
+        date: adjustedDate,
         payType: restoredPayType,
         paymentTerm,
         isRecurring,
         seriesId: t.seriesId,
+        confirmationStatus: t.confirmationStatus || 'not_sent',
+        confirmationLogs: t.confirmationLogs || [],
       };
     });
   } catch (err) {
@@ -132,6 +145,73 @@ export const saveCleaners = (cleaners: Cleaner[]): void => {
   }
 };
 
+// Staff Users Management
+export const INITIAL_STAFF_USERS: StaffUser[] = [
+  {
+    id: 'user-admin',
+    username: 'admin',
+    name: 'Sarah Jenkins (Ops Manager)',
+    password: 'buzzbee123',
+    role: 'admin',
+    email: 'sarah.jenkins@dbuzzingbees.com.au',
+    phone: '0412 884 921',
+    status: 'active',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'user-manager',
+    username: 'manager',
+    name: 'Alex Rivera (Supervisor)',
+    password: 'buzzbee123',
+    role: 'manager',
+    email: 'alex.rivera@dbuzzingbees.com.au',
+    phone: '0434 551 882',
+    status: 'active',
+    createdAt: '2026-03-15T09:00:00.000Z',
+  },
+];
+
+export const loadStaffUsers = (): StaffUser[] => {
+  try {
+    const raw = localStorage.getItem(USERS_STORAGE_KEY);
+    if (!raw) {
+      saveStaffUsers(INITIAL_STAFF_USERS);
+      return INITIAL_STAFF_USERS;
+    }
+    const parsed: StaffUser[] = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      saveStaffUsers(INITIAL_STAFF_USERS);
+      return INITIAL_STAFF_USERS;
+    }
+    return parsed;
+  } catch (err) {
+    console.error('Failed to load staff users', err);
+    return INITIAL_STAFF_USERS;
+  }
+};
+
+export const saveStaffUsers = (users: StaffUser[]): void => {
+  try {
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+  } catch (err) {
+    console.error('Failed to save staff users', err);
+  }
+};
+
+export const authenticateUser = (username: string, password: string): StaffUser | null => {
+  const users = loadStaffUsers();
+  const cleanUsername = username.trim().toLowerCase();
+  const found = users.find(
+    (u) => u.username.toLowerCase() === cleanUsername && u.status === 'active'
+  );
+  if (!found) return null;
+  const expectedPassword = found.password || 'buzzbee123';
+  if (password === expectedPassword) {
+    return found;
+  }
+  return null;
+};
+
 // Session & Auth Management
 export const getActiveSession = (): UserSession | null => {
   try {
@@ -143,7 +223,7 @@ export const getActiveSession = (): UserSession | null => {
     if (!raw) return null;
     const session: UserSession = JSON.parse(raw);
     
-    // Check expiration timestamp
+    // Check expiration timestamp (30 minutes of inactivity)
     const now = Date.now();
     if (session.expiresAt && now > session.expiresAt) {
       // Session has expired!
@@ -161,14 +241,23 @@ export const createSession = (
   rememberMe: boolean,
   durationMs: number = DEFAULT_SESSION_DURATION_MS
 ): UserSession => {
+  const users = loadStaffUsers();
+  const user = users.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
+
   const session: UserSession = {
-    username,
-    name: username === 'admin' ? 'Sarah Jenkins (Ops Manager)' : username,
-    role: 'admin',
+    username: user ? user.username : username,
+    name: user ? user.name : (username === 'admin' ? 'Sarah Jenkins (Ops Manager)' : username),
+    role: user ? user.role : 'admin',
     loginTime: Date.now(),
     expiresAt: Date.now() + durationMs,
     rememberMe,
   };
+
+  // Record last login timestamp
+  if (user) {
+    user.lastLogin = new Date().toISOString();
+    saveStaffUsers(users);
+  }
 
   const str = JSON.stringify(session);
   if (rememberMe) {
@@ -204,8 +293,8 @@ export const loadTheme = (): 'light' | 'dark' => {
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === 'dark' || saved === 'light') return saved;
-    // Default to light or check system preference
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    // Default to light
+    return 'light';
   } catch {
     return 'light';
   }
@@ -216,10 +305,33 @@ export const saveTheme = (theme: 'light' | 'dark'): void => {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
+      document.documentElement.style.colorScheme = 'dark';
     } else {
       document.documentElement.classList.remove('dark');
+      document.documentElement.style.colorScheme = 'light';
     }
   } catch (err) {
     console.error('Failed to save theme', err);
   }
 };
+
+// Company Settings & Confirmation Template Management
+export const loadCompanySettings = (): CompanySettings => {
+  try {
+    const raw = localStorage.getItem(COMPANY_SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_COMPANY_SETTINGS;
+    return { ...DEFAULT_COMPANY_SETTINGS, ...JSON.parse(raw) };
+  } catch (err) {
+    console.error('Failed to load company settings', err);
+    return DEFAULT_COMPANY_SETTINGS;
+  }
+};
+
+export const saveCompanySettings = (settings: CompanySettings): void => {
+  try {
+    localStorage.setItem(COMPANY_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch (err) {
+    console.error('Failed to save company settings', err);
+  }
+};
+

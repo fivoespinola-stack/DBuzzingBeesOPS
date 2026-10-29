@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, Calendar, DollarSign, MapPin, FileText, UserCheck, CheckCircle2, Mail, CreditCard, CalendarDays, Check } from 'lucide-react';
-import { Task, Cleaner, JobType, PayType, PaymentTerm, Frequency } from '../types';
+import { X, Clock, Calendar, DollarSign, MapPin, FileText, UserCheck, CheckCircle2, Mail, CreditCard, CalendarDays, Check, Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
+import { Task, Cleaner, JobType, PayType, PaymentTerm, Frequency, ConfirmationStatus, ConfirmationChannel } from '../types';
 import { 
   calculateEndTime, 
   formatDate, 
   formatFrequency, 
   isRecurringFrequency, 
   getScheduledDatesForSixMonths, 
-  generateSixMonthRecurringTasks 
+  generateSixMonthRecurringTasks,
+  getNextClientNumber,
+  findExistingClientNumber,
+  isWeekend,
+  adjustDateStringToWeekday
 } from '../utils/formatters';
 
 interface TaskModalProps {
@@ -17,6 +21,7 @@ interface TaskModalProps {
   taskToEdit?: Task | null;
   cleaners: Cleaner[];
   defaultDate?: string;
+  tasks?: Task[];
 }
 
 const COMMON_JOB_TYPES: JobType[] = [
@@ -37,6 +42,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   taskToEdit,
   cleaners,
   defaultDate,
+  tasks = [],
 }) => {
   const [jobType, setJobType] = useState<string>('Residential Standard');
   const [customJobType, setCustomJobType] = useState('');
@@ -46,6 +52,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
+  const [clientMessenger, setClientMessenger] = useState('');
+  const [clientPreferredChannel, setClientPreferredChannel] = useState<'whatsapp' | 'messenger' | 'sms' | 'any'>('any');
+  const [specialInstructions, setSpecialInstructions] = useState('');
+  const [confirmationStatus, setConfirmationStatus] = useState<ConfirmationStatus>('not_sent');
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('12:00');
@@ -98,6 +108,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setClientName(taskToEdit.clientName || '');
         setClientPhone(taskToEdit.clientPhone || '');
         setClientEmail(taskToEdit.clientEmail || '');
+        setClientMessenger(taskToEdit.clientMessenger || '');
+        setClientPreferredChannel(taskToEdit.clientPreferredChannel || 'any');
+        setSpecialInstructions(taskToEdit.specialInstructions || '');
+        setConfirmationStatus(taskToEdit.confirmationStatus || 'not_sent');
         setDate(taskToEdit.date || '');
         setStartTime(taskToEdit.startTime || '09:00');
         setEndTime(taskToEdit.endTime || '12:00');
@@ -146,10 +160,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setIsCustomJob(false);
         setCustomJobType('');
         setAddress('');
-        setClientNumber('');
+        const autoClientNum = getNextClientNumber(tasks);
+        setClientNumber(autoClientNum);
         setClientName('');
         setClientPhone('');
         setClientEmail('');
+        setClientMessenger('');
+        setClientPreferredChannel('any');
+        setSpecialInstructions('');
+        setConfirmationStatus('not_sent');
         const todayStr = defaultDate || new Date().toISOString().split('T')[0];
         setDate(todayStr);
         setStartTime('09:00');
@@ -173,7 +192,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
     prevIsOpenRef.current = isOpen;
     prevTaskIdRef.current = taskToEdit ? taskToEdit.id : null;
-  }, [isOpen, taskToEdit, defaultDate]);
+  }, [isOpen, taskToEdit, defaultDate, tasks]);
+
+  // Auto-link existing client or generate sequential client number when typing client name
+  const handleClientNameChange = (val: string) => {
+    setClientName(val);
+    if (!taskToEdit) {
+      const existingNo = findExistingClientNumber(tasks, val);
+      if (existingNo) {
+        setClientNumber(existingNo);
+      } else if (!clientNumber || tasks.some(t => t.clientNumber === clientNumber)) {
+        setClientNumber(getNextClientNumber(tasks));
+      }
+    }
+  };
+
+  const handleRegenerateClientNumber = () => {
+    setClientNumber(getNextClientNumber(tasks));
+  };
 
   // When start time or fixHour changes, update end time
   const handleStartTimeChange = (newStart: string) => {
@@ -215,6 +251,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       newErrors.frequency = 'Please specify custom frequency.';
     }
 
+    // Weekend enforcement: Recurring client tasks cannot fall on Saturday or Sunday
+    const finalFreq = isCustomFrequency ? customFrequency.trim() : frequency;
+    if (date && isRecurringFrequency(finalFreq) && isWeekend(date)) {
+      newErrors.date = 'Recurring tasks cannot be scheduled on Saturday or Sunday. Weekends are reserved for special tasks only.';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -231,10 +273,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       id: taskToEdit ? taskToEdit.id : `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       jobType: finalJobType,
       address: address.trim(),
-      clientNumber: clientNumber.trim() || undefined,
+      clientNumber: clientNumber.trim() || (!taskToEdit ? getNextClientNumber(tasks) : undefined),
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
       clientEmail: clientEmail.trim(),
+      clientMessenger: clientMessenger.trim() || undefined,
+      clientPreferredChannel,
+      specialInstructions: specialInstructions.trim() || undefined,
+      confirmationStatus,
+      lastConfirmationSentAt: taskToEdit?.lastConfirmationSentAt,
+      lastConfirmationChannel: taskToEdit?.lastConfirmationChannel,
+      confirmationLogs: taskToEdit?.confirmationLogs || [],
       fixHour,
       rate,
       payType,
@@ -383,7 +432,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-neutral-600 dark:text-neutral-300">
-                    Frequency <strong className="text-neutral-900 dark:text-white">{formatFrequency(isCustomFrequency ? customFrequency : frequency)}</strong> will automatically populate the cleaning calendar for the next 6 months.
+                    Frequency <strong className="text-neutral-900 dark:text-white">{formatFrequency(isCustomFrequency ? customFrequency : frequency)}</strong> will automatically populate the cleaning calendar for the next 6 months. All visits strictly skip Saturdays and Sundays (reserved for special tasks).
                   </p>
                   <label className="flex items-center gap-2 cursor-pointer font-semibold select-none pt-0.5 text-[11.5px] text-neutral-900 dark:text-white">
                     <input
@@ -392,7 +441,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setApplySixMonths(e.target.checked)}
                       className="h-4 w-4 rounded border-neutral-300 dark:border-neutral-600 text-[#FFB509] focus:ring-[#FFB509]"
                     />
-                    <span>Schedule recurring visits in the cleaning calendar for the next 6 months</span>
+                    <span>Schedule recurring visits in the cleaning calendar for the next 6 months (Weekdays only)</span>
                   </label>
                 </div>
               )}
@@ -423,17 +472,37 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {/* Client Details */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
             <div>
-              <label htmlFor="task-client-number" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
-                Client #
-              </label>
-              <input
-                id="task-client-number"
-                type="text"
-                placeholder="e.g. BBA0098"
-                value={clientNumber}
-                onChange={(e) => setClientNumber(e.target.value.toUpperCase())}
-                className="w-full px-3.5 py-2 text-sm font-mono bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white"
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="task-client-number" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                  Client #
+                </label>
+                {!taskToEdit && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-500" />
+                    Auto
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  id="task-client-number"
+                  type="text"
+                  placeholder="e.g. BBA0098"
+                  value={clientNumber}
+                  onChange={(e) => setClientNumber(e.target.value.toUpperCase())}
+                  className="w-full pl-3.5 pr-8 py-2 text-sm font-mono font-bold bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white"
+                />
+                {!taskToEdit && (
+                  <button
+                    type="button"
+                    onClick={handleRegenerateClientNumber}
+                    title="Regenerate next sequential client ID"
+                    className="absolute right-2 top-2.5 text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div>
@@ -445,7 +514,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 type="text"
                 placeholder="e.g. Elena Rostova"
                 value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
+                onChange={(e) => handleClientNameChange(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white"
               />
             </div>
@@ -479,6 +548,68 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
           </div>
 
+          {/* Client Communication & Confirmation Settings */}
+          <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-200 dark:border-neutral-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                Client Confirmation & Channels
+              </span>
+              <span className="text-[11px] text-neutral-500">
+                Messenger / WhatsApp / SMS
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label htmlFor="task-client-messenger" className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">
+                  Facebook Messenger
+                </label>
+                <input
+                  id="task-client-messenger"
+                  type="text"
+                  placeholder="e.g. m.me/username or handle"
+                  value={clientMessenger}
+                  onChange={(e) => setClientMessenger(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="task-preferred-channel" className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">
+                  Preferred Channel
+                </label>
+                <select
+                  id="task-preferred-channel"
+                  value={clientPreferredChannel}
+                  onChange={(e) => setClientPreferredChannel(e.target.value as 'whatsapp' | 'messenger' | 'sms' | 'any')}
+                  className="w-full px-3 py-1.5 text-xs bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white"
+                >
+                  <option value="any">Any / No Preference</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="messenger">Facebook Messenger</option>
+                  <option value="sms">SMS Text</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="task-confirmation-status" className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">
+                  Confirmation Status
+                </label>
+                <select
+                  id="task-confirmation-status"
+                  value={confirmationStatus}
+                  onChange={(e) => setConfirmationStatus(e.target.value as ConfirmationStatus)}
+                  className="w-full px-3 py-1.5 text-xs bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white font-semibold"
+                >
+                  <option value="not_sent">Not Sent</option>
+                  <option value="sent">Confirmation Sent</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="needs_reschedule">Needs Reschedule</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           {/* Date & Time Row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
@@ -496,7 +627,44 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   className="w-full pl-10 pr-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white font-mono"
                 />
               </div>
-              {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date}</p>}
+              {errors.date && <p className="mt-1 text-xs text-red-500 font-medium">{errors.date}</p>}
+
+              {isWeekend(date) && isRecurringFrequency(isCustomFrequency ? customFrequency : frequency) && (
+                <div className="mt-2 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-300">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Weekend Restricted</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-700 dark:text-neutral-300 leading-tight">
+                    Recurring client tasks cannot be scheduled on Saturday or Sunday. Weekends are reserved for special tasks only.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setDate(adjustDateStringToWeekday(date, false))}
+                      className="px-2 py-0.5 rounded bg-[#FFB509] text-neutral-950 font-bold text-[10px] hover:bg-[#EAA300] transition-colors cursor-pointer"
+                    >
+                      Shift to Weekday
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFrequency('one-off');
+                        setIsCustomFrequency(false);
+                      }}
+                      className="px-2 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold text-[10px] hover:bg-neutral-300 dark:hover:bg-neutral-600 transition-colors cursor-pointer"
+                    >
+                      Set to One-off
+                    </button>
+                  </div>
+                </div>
+              )}
+              {isWeekend(date) && !isRecurringFrequency(isCustomFrequency ? customFrequency : frequency) && (
+                <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                  Weekend slot: Special Task (One-off / Flexible)
+                </p>
+              )}
             </div>
 
             <div>
@@ -686,6 +854,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <p className="text-xs text-neutral-500 p-2 col-span-2">No cleaners registered yet.</p>
               )}
             </div>
+          </div>
+
+          {/* Special Instructions & Add-ons */}
+          <div>
+            <label htmlFor="task-special-instructions" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
+              Special Instructions & Add-ons (Included in Client Confirmation)
+            </label>
+            <input
+              id="task-special-instructions"
+              type="text"
+              placeholder="e.g. Inside oven clean, balcony windows, please don't let the cat out"
+              value={specialInstructions}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
+              className="w-full px-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white"
+            />
           </div>
 
           {/* Remarks */}
