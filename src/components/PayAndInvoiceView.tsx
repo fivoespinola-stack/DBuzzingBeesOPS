@@ -9,7 +9,7 @@ import {
   TrendingUp, 
   Users, 
   Clock, 
-  CheckCircle, ``
+  CheckCircle,
   Calendar,
   CalendarDays,
   CalendarRange,
