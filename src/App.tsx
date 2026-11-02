@@ -26,21 +26,37 @@ import {
   saveTheme,
   INITIAL_CLEANERS,
   getInitialTasks,
-  clearAllProductionRecords
+  clearAllProductionRecords,
+  loadCompanySettings
 } from './services/storage';
 import { 
   subscribeToTasks, 
   subscribeToCleaners, 
+  saveTaskToFirestore,
   deleteTaskFromFirestore, 
   deleteCleanerFromFirestore,
   testFirestoreConnection
 } from './services/firebase';
 import { exportAllDataToExcel } from './services/excelService';
+import { approveBookingAndAutoSend, retryEmailConfirmation, sendBookingConfirmation } from './services/emailConfirmationService';
 import { formatDate } from './utils/formatters';
 
 export default function App() {
   // Theme state
   const [theme, setTheme] = useState<'light' | 'dark'>(loadTheme());
+
+  // Action feedback toast state
+  const [actionToast, setActionToast] = useState<{
+    type: 'success' | 'error' | 'info';
+    title: string;
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!actionToast) return;
+    const timer = setTimeout(() => setActionToast(null), 5000);
+    return () => clearTimeout(timer);
+  }, [actionToast]);
 
   // Auth Session state
   const [session, setSession] = useState<UserSession | null>(null);
@@ -245,6 +261,75 @@ export default function App() {
     });
   };
 
+  const handleApproveBooking = async (taskToApprove: Task) => {
+    if (!session) return;
+    try {
+      const isCurrentlyApproved = Boolean(taskToApprove.isApproved);
+      const updatedTask: Task = {
+        ...taskToApprove,
+        isApproved: !isCurrentlyApproved,
+        approvedBy: !isCurrentlyApproved ? (session.name || session.username) : undefined,
+        approvedAt: !isCurrentlyApproved ? new Date().toISOString() : undefined,
+      };
+
+      setTasks((prev) => {
+        const updated = prev.map((t) => (t.id === updatedTask.id ? updatedTask : t));
+        saveTasks(updated);
+        return updated;
+      });
+
+      saveTaskToFirestore(updatedTask).catch((err) => {
+        console.warn('Firestore task approval sync notice:', err);
+      });
+
+      setActionToast({
+        type: 'success',
+        title: !isCurrentlyApproved ? 'Booking Approved' : 'Approval Removed',
+        message: !isCurrentlyApproved
+          ? `Booking for ${taskToApprove.clientName || 'Client'} marked as approved. (No auto-send; use 1-Click Send when ready)`
+          : `Booking for ${taskToApprove.clientName || 'Client'} set back to pending approval.`
+      });
+    } catch (err: any) {
+      setActionToast({
+        type: 'error',
+        title: 'Approval Error',
+        message: err?.message || 'Could not update booking approval.'
+      });
+    }
+  };
+
+  const handleRetryEmail = async (taskToRetry: Task) => {
+    if (!session) return;
+    try {
+      const res = await retryEmailConfirmation(taskToRetry, cleaners, session.name);
+      setTasks((prev) => {
+        const updated = prev.map((t) => (t.id === res.updatedTask.id ? res.updatedTask : t));
+        saveTasks(updated);
+        return updated;
+      });
+
+      if (res.success) {
+        setActionToast({
+          type: 'success',
+          title: 'Confirmation Email Dispatched!',
+          message: `Successfully sent confirmation email to ${taskToRetry.clientEmail || 'Client'} and logged in database.`
+        });
+      } else {
+        setActionToast({
+          type: 'error',
+          title: 'Email Retry Failed',
+          message: res.error || 'Delivery failed. Try WhatsApp or Messenger.'
+        });
+      }
+    } catch (err: any) {
+      setActionToast({
+        type: 'error',
+        title: 'Retry Failed',
+        message: err?.message || 'Failed to retry email.'
+      });
+    }
+  };
+
   const handleDeleteTask = (taskId: string) => {
     setTasks((prev) => {
       const updated = prev.filter((t) => t.id !== taskId);
@@ -279,26 +364,114 @@ export default function App() {
     setTaskModalOpen(true);
   };
 
-  // Confirmation Modal Handlers
-  const handleOpenSendConfirmation = useCallback((task: Task) => {
+  // 1-Click Direct Confirmation Send (Zero Modal / Zero Popups)
+  const handleDirectSendConfirmation = useCallback(async (targetTask: Task) => {
+    if (!sessionRef.current) return;
+    try {
+      const res = await sendBookingConfirmation(targetTask, cleaners, {
+        isAutomatic: false,
+        staffName: sessionRef.current.name,
+        staffUsername: sessionRef.current.username,
+      });
+
+      setTasks((prev) => {
+        const updated = prev.map((t) => (t.id === res.updatedTask.id ? res.updatedTask : t));
+        saveTasks(updated);
+        return updated;
+      });
+
+      if (res.success) {
+        setActionToast({
+          type: 'success',
+          title: 'Confirmation Sent (1-Click)!',
+          message: `Dispatched confirmation to ${targetTask.clientName || 'Client'} via ${res.channelUsed.toUpperCase()} (Free) with no popups.`
+        });
+      } else {
+        setActionToast({
+          type: 'error',
+          title: 'Confirmation Notice',
+          message: res.error || 'Could not dispatch confirmation. Check client contact.'
+        });
+      }
+    } catch (err: any) {
+      setActionToast({
+        type: 'error',
+        title: 'Error Sending Confirmation',
+        message: err?.message || 'Failed to dispatch confirmation.'
+      });
+    }
+  }, [cleaners]);
+
+  // 1-Click Direct Bulk Confirmation Send (Zero Modal / Zero Popups)
+  const handleDirectBulkSendConfirmation = useCallback(async (selectedTasks: Task[]) => {
+    if (!sessionRef.current || selectedTasks.length === 0) return;
+    let sentCount = 0;
+    let failCount = 0;
+    const updatedList: Task[] = [];
+
+    for (const t of selectedTasks) {
+      try {
+        const res = await sendBookingConfirmation(t, cleaners, {
+          isAutomatic: false,
+          staffName: sessionRef.current.name,
+          staffUsername: sessionRef.current.username,
+        });
+        updatedList.push(res.updatedTask);
+        if (res.success) sentCount++;
+        else failCount++;
+      } catch {
+        failCount++;
+        updatedList.push(t);
+      }
+    }
+
+    setTasks((prev) => {
+      const idMap = new Map(updatedList.map((item) => [item.id, item]));
+      const updated = prev.map((item) => idMap.get(item.id) || item);
+      saveTasks(updated);
+      return updated;
+    });
+
+    setActionToast({
+      type: sentCount > 0 ? 'success' : 'error',
+      title: 'Bulk Confirmations Sent (1-Click)!',
+      message: `Directly dispatched ${sentCount} booking confirmation(s) via Email (Free). Zero popups.`
+    });
+  }, [cleaners]);
+
+  // Optional manual preview modal if explicitly requested
+  const handleOpenCustomizeModal = useCallback((task: Task) => {
     setConfirmationTask(task);
     setConfirmationBulkTasks(null);
     setConfirmationModalOpen(true);
   }, []);
 
-  const handleOpenBulkConfirmation = useCallback((selectedTasks: Task[]) => {
-    setConfirmationBulkTasks(selectedTasks);
-    setConfirmationTask(null);
-    setConfirmationModalOpen(true);
-  }, []);
-
   const handleUpdateTaskFromConfirmation = (updatedTask: Task) => {
     setTasks((prev) => {
-      const updated = prev.map((t) => (t.id === updatedTask.id ? updatedTask : t));
+      const updated = prev.map((t) => {
+        if (t.id === updatedTask.id) return updatedTask;
+        // If client matches, sync updated contact details across all their tasks
+        if (
+          updatedTask.clientName &&
+          t.clientName &&
+          t.clientName.trim().toLowerCase() === updatedTask.clientName.trim().toLowerCase()
+        ) {
+          return {
+            ...t,
+            clientPhone: updatedTask.clientPhone,
+            clientEmail: updatedTask.clientEmail,
+            clientMessenger: updatedTask.clientMessenger,
+          };
+        }
+        return t;
+      });
       saveTasks(updated);
       return updated;
     });
     setConfirmationTask((prev) => (prev?.id === updatedTask.id ? updatedTask : prev));
+    saveTaskToFirestore(updatedTask).catch((err) => {
+      console.warn('Firestore single task sync notice:', err);
+    });
   };
 
   const handleBulkUpdateTasksFromConfirmation = (updatedBatch: Task[]) => {
@@ -401,8 +574,8 @@ export default function App() {
             onAddNewTask={handleOpenAddNewTask}
             onOpenImportExport={() => setImportExportModalOpen(true)}
             onNavigateToTab={(tab) => setCurrentTab(tab)}
-            onSendConfirmation={handleOpenSendConfirmation}
-            onBulkSendConfirmation={handleOpenBulkConfirmation}
+            onSendConfirmation={handleDirectSendConfirmation}
+            onBulkSendConfirmation={handleDirectBulkSendConfirmation}
           />
         )}
 
@@ -416,8 +589,11 @@ export default function App() {
             onDuplicateTask={handleDuplicateTask}
             onAddNewTask={() => handleOpenAddNewTask()}
             onExportTasks={handleExportFilteredTasks}
-            onSendConfirmation={handleOpenSendConfirmation}
-            onBulkSendConfirmation={handleOpenBulkConfirmation}
+            onSendConfirmation={handleDirectSendConfirmation}
+            onBulkSendConfirmation={handleDirectBulkSendConfirmation}
+            onApproveBooking={handleApproveBooking}
+            onRetryEmail={handleRetryEmail}
+            onOpenCustomizeConfirmation={handleOpenCustomizeModal}
           />
         )}
 
@@ -428,8 +604,8 @@ export default function App() {
             onToggleComplete={handleToggleComplete}
             onEditTask={handleOpenEditTask}
             onAddNewTask={handleOpenAddNewTask}
-            onSendConfirmation={handleOpenSendConfirmation}
-            onBulkSendConfirmation={handleOpenBulkConfirmation}
+            onSendConfirmation={handleDirectSendConfirmation}
+            onBulkSendConfirmation={handleDirectBulkSendConfirmation}
           />
         )}
 
@@ -554,6 +730,40 @@ export default function App() {
           <button
             onClick={() => setRecurringToast(null)}
             className="p-1 rounded-lg text-neutral-400 hover:text-white dark:hover:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-colors"
+            title="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </aside>
+      )}
+
+      {/* Confirmation & Approval Action Toast */}
+      {actionToast && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 left-5 z-50 max-w-md w-full p-4 rounded-2xl bg-white dark:bg-neutral-900 shadow-2xl border border-neutral-200 dark:border-neutral-800 flex items-start justify-between gap-3 animate-in fade-in slide-in-from-bottom-5 duration-300"
+        >
+          <div className="flex items-start gap-3">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 font-bold shadow-xs ${
+              actionToast.type === 'error'
+                ? 'bg-rose-100 dark:bg-rose-950 text-rose-600'
+                : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600'
+            }`}>
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-bold text-sm text-neutral-900 dark:text-white">
+                {actionToast.title}
+              </div>
+              <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-0.5">
+                {actionToast.message}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActionToast(null)}
+            className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
             title="Dismiss"
           >
             <X className="w-4 h-4" />

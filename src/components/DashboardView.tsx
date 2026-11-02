@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Task, Cleaner } from '../types';
 import { BeeLogo } from './BeeLogo';
+import { PerformanceDashboard } from './PerformanceDashboard';
 import { 
   formatDateLong, 
   formatDate,
@@ -609,6 +610,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* SECTION: PERFORMANCE DASHBOARD (MONTHLY RECURRING REVENUE & COMPLETED JOBS) */}
+      <PerformanceDashboard tasks={tasks} onNavigateToTab={onNavigateToTab} />
+
       {/* Copy Toast Notification */}
       {copyFeedback && (
         <div className="p-3 rounded-xl bg-amber-500 text-neutral-950 font-bold text-xs flex items-center justify-between shadow-md transition-all animate-bounce">
@@ -732,11 +736,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {tomorrowJobs.length > 0 && onBulkSendConfirmation && (
               <button
                 onClick={() => onBulkSendConfirmation(tomorrowJobs)}
-                title="Send booking confirmations to all clients scheduled tomorrow"
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-[#FFB509] border border-amber-500/40 transition-colors focus:outline-none"
+                title="Direct 1-Click Send booking confirmations to all clients scheduled tomorrow via Email First (Free). Zero popups."
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-[#FFB509] border border-amber-500/40 transition-colors focus:outline-none"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Confirm Tomorrow ({tomorrowJobs.length})</span>
+                <span>1-Click Confirm Tomorrow ({tomorrowJobs.length})</span>
               </button>
             )}
 
@@ -745,11 +749,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {onBulkSendConfirmation && (
                   <button
                     onClick={() => onBulkSendConfirmation(todayJobs)}
-                    title="Send booking confirmations to all clients scheduled today"
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition-colors focus:outline-none"
+                    title="Direct 1-Click Send booking confirmations to all clients scheduled today via Email First (Free). Zero popups."
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition-colors focus:outline-none"
                   >
                     <Send className="w-3.5 h-3.5 text-[#FFB509]" />
-                    <span>Confirm Today ({todayJobs.length})</span>
+                    <span>1-Click Confirm Today ({todayJobs.length})</span>
                   </button>
                 )}
 

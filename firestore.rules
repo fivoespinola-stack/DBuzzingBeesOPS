@@ -4,6 +4,9 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read, write: if true;
     }
+    match /confirmation_logs/{logId} {
+      allow read, write: if true;
+    }
     match /cleaners/{cleanerId} {
       allow read, write: if true;
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, Calendar, DollarSign, MapPin, FileText, UserCheck, CheckCircle2, Mail, CreditCard, CalendarDays, Check, Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
+import { X, Clock, Calendar, DollarSign, MapPin, FileText, UserCheck, CheckCircle2, Mail, CreditCard, CalendarDays, Check, Sparkles, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
 import { Task, Cleaner, JobType, PayType, PaymentTerm, Frequency, ConfirmationStatus, ConfirmationChannel } from '../types';
 import { 
   calculateEndTime, 
@@ -60,6 +60,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [clientPreferredChannel, setClientPreferredChannel] = useState<'whatsapp' | 'messenger' | 'sms' | 'email' | 'any'>('any');
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [confirmationStatus, setConfirmationStatus] = useState<ConfirmationStatus>('not_sent');
+  const [isApproved, setIsApproved] = useState(false);
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('12:00');
@@ -116,6 +117,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setClientPreferredChannel(taskToEdit.clientPreferredChannel || 'any');
         setSpecialInstructions(taskToEdit.specialInstructions || '');
         setConfirmationStatus(taskToEdit.confirmationStatus || 'not_sent');
+        setIsApproved(Boolean(taskToEdit.isApproved));
         setDate(taskToEdit.date || '');
         setStartTime(taskToEdit.startTime || '09:00');
         setEndTime(taskToEdit.endTime || '12:00');
@@ -314,6 +316,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       clientMessenger: clientMessenger.trim() || undefined,
       clientPreferredChannel,
       specialInstructions: specialInstructions.trim() || undefined,
+      isApproved,
+      approvedBy: isApproved ? (taskToEdit?.approvedBy || 'Admin') : undefined,
+      approvedAt: isApproved ? (taskToEdit?.approvedAt || new Date().toISOString()) : undefined,
       confirmationStatus,
       lastConfirmationSentAt: taskToEdit?.lastConfirmationSentAt,
       lastConfirmationChannel: taskToEdit?.lastConfirmationChannel,
@@ -642,6 +647,30 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <option value="needs_reschedule">Needs Reschedule</option>
                 </select>
               </div>
+            </div>
+
+            {/* Admin Approval Control */}
+            <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>Admin Booking Approval</span>
+                </span>
+                <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block mt-0.5">
+                  Marks booking as verified by administration. (Confirmations sent via 1-Click Send)
+                </span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer bg-white dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:border-amber-400 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={isApproved}
+                  onChange={(e) => setIsApproved(e.target.checked)}
+                  className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className={`text-xs font-bold ${isApproved ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-600 dark:text-neutral-400'}`}>
+                  {isApproved ? 'Approved Booking' : 'Pending Approval'}
+                </span>
+              </label>
             </div>
           </div>
 

@@ -106,7 +106,13 @@ export const loadTasks = (): Task[] => {
         paymentTerm,
         isRecurring,
         seriesId: t.seriesId,
+        isApproved: Boolean(t.isApproved),
+        approvedBy: t.approvedBy,
+        approvedAt: t.approvedAt,
         confirmationStatus: t.confirmationStatus || 'not_sent',
+        confirmationDeliveryStatus: t.confirmationDeliveryStatus || (t.confirmationStatus === 'sent' ? 'sent' : 'pending'),
+        confirmationRetryCount: t.confirmationRetryCount || 0,
+        confirmationLastError: t.confirmationLastError,
         confirmationLogs: t.confirmationLogs || [],
       };
     });
@@ -361,8 +367,32 @@ export const loadCompanySettings = (): CompanySettings => {
 export const saveCompanySettings = (settings: CompanySettings): void => {
   try {
     localStorage.setItem(COMPANY_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    saveSettingsToFirestore(settings).catch((err) => {
+      console.warn('Firestore settings sync notice:', err);
+    });
   } catch (err) {
     console.error('Failed to save company settings', err);
   }
 };
+
+// Global Confirmation Logs Cache
+const CONFIRMATION_LOGS_STORAGE_KEY = 'dbuzzingbees_confirmation_logs_v1';
+
+export const loadLocalConfirmationLogs = (): any[] => {
+  try {
+    const raw = localStorage.getItem(CONFIRMATION_LOGS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveLocalConfirmationLogs = (logs: any[]): void => {
+  try {
+    localStorage.setItem(CONFIRMATION_LOGS_STORAGE_KEY, JSON.stringify(logs));
+  } catch (err) {
+    console.error('Failed to save confirmation logs locally:', err);
+  }
+};
+
 

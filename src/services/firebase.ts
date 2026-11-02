@@ -12,7 +12,7 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Task, Cleaner, StaffUser, CompanySettings } from '../types';
+import { Task, Cleaner, StaffUser, CompanySettings, ConfirmationLog } from '../types';
 
 // Initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -37,6 +37,7 @@ export async function testFirestoreConnection(): Promise<boolean> {
 
 // Collections
 const TASKS_COLLECTION = 'tasks';
+const CONFIRMATION_LOGS_COLLECTION = 'confirmation_logs';
 const CLEANERS_COLLECTION = 'cleaners';
 const STAFF_COLLECTION = 'staff_users';
 const SETTINGS_COLLECTION = 'settings';
@@ -268,3 +269,55 @@ export async function saveStaffUserToFirestore(user: StaffUser): Promise<void> {
     console.error(`Error saving staff user ${user.id} to Firestore:`, err);
   }
 }
+
+// ==========================================
+// CONFIRMATION LOGS (Cloud Audit & History)
+// ==========================================
+
+export async function saveConfirmationLogToFirestore(log: ConfirmationLog): Promise<void> {
+  try {
+    const docRef = doc(db, CONFIRMATION_LOGS_COLLECTION, log.id);
+    await setDoc(docRef, JSON.parse(JSON.stringify(log)), { merge: true });
+  } catch (err) {
+    console.error(`Error saving confirmation log ${log.id} to Firestore:`, err);
+  }
+}
+
+export async function fetchConfirmationLogsFromFirestore(): Promise<ConfirmationLog[]> {
+  try {
+    const colRef = collection(db, CONFIRMATION_LOGS_COLLECTION);
+    const snap = await getDocs(colRef);
+    const items: ConfirmationLog[] = [];
+    snap.forEach((d) => {
+      items.push({ id: d.id, ...d.data() } as ConfirmationLog);
+    });
+    // Sort descending by timestamp
+    return items.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  } catch (err) {
+    console.error('Error fetching confirmation logs from Firestore:', err);
+    return [];
+  }
+}
+
+export function subscribeToConfirmationLogs(
+  onData: (logs: ConfirmationLog[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const colRef = collection(db, CONFIRMATION_LOGS_COLLECTION);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: ConfirmationLog[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...d.data() } as ConfirmationLog);
+      });
+      items.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      onData(items);
+    },
+    (err) => {
+      console.error('Firestore confirmation logs snapshot error:', err);
+      onError?.(err);
+    }
+  );
+}
+

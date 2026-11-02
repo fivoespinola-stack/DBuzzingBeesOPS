@@ -26,6 +26,7 @@ interface CalendarViewProps {
   onAddNewTask: (defaultDate?: string) => void;
   onSendConfirmation: (task: Task) => void;
   onBulkSendConfirmation?: (tasks: Task[]) => void;
+  onApproveBooking?: (task: Task) => void;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -36,6 +37,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onAddNewTask,
   onSendConfirmation,
   onBulkSendConfirmation,
+  onApproveBooking,
 }) => {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(toLocalDateString());
@@ -331,10 +333,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     else onSendConfirmation(selectedDayTasks[0]);
                   }}
                   className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
-                  title="Send confirmations to all scheduled bookings on this day"
+                  title="Direct 1-Click Send confirmations to all scheduled bookings on this day via Email First (Free). Zero popups."
                 >
                   <Send className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>Confirm Day ({selectedDayTasks.length})</span>
+                  <span>1-Click Confirm All ({selectedDayTasks.length})</span>
                 </button>
               )}
               <button
@@ -453,11 +455,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => onSendConfirmation(task)}
-                          className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md transition-colors"
-                          title="Send Confirmation via WhatsApp, Messenger, SMS"
+                          className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
+                          title="1-Click Direct Send confirmation via Email First (Free). Zero popups."
                         >
                           <Send className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                          <span>Confirm</span>
+                          <span>1-Click Confirm</span>
                         </button>
                         <span className="font-mono-numbers font-bold text-neutral-900 dark:text-white">
                           {task.payType === 'Fixed Price'

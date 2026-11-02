@@ -27,19 +27,32 @@ export type Frequency =
   | 'others'
   | string;
 
-export type ConfirmationStatus = 'not_sent' | 'sent' | 'confirmed' | 'needs_reschedule';
+export type ConfirmationStatus = 'not_sent' | 'sent' | 'confirmed' | 'needs_reschedule' | 'failed' | 'retrying';
 
 export type ConfirmationChannel = 'whatsapp' | 'messenger' | 'sms' | 'email';
 
 export interface ConfirmationLog {
   id: string;
+  taskId: string;
+  taskTitle?: string;
   timestamp: string; // ISO string
   channel: ConfirmationChannel;
   staffName: string;
   staffUsername?: string;
   status: ConfirmationStatus;
-  recipient: string; // phone number, messenger handle, etc.
+  deliveryStatus?: 'sent' | 'delivered' | 'failed' | 'retrying';
+  recipient: string; // phone number, email, messenger handle, etc.
+  recipientName?: string;
+  subject?: string;
   messagePreview?: string;
+  fullMessage?: string;
+  htmlContent?: string;
+  retryCount?: number;
+  lastError?: string;
+  rescheduleUrl?: string;
+  contactUrl?: string;
+  serviceDate?: string;
+  serviceTime?: string;
   notes?: string;
 }
 
@@ -72,8 +85,16 @@ export interface Task {
   nextInstanceGenerated?: boolean;
   seriesId?: string;
   
+  // Admin Approval & Automated Confirmation Workflow
+  isApproved?: boolean;
+  approvedBy?: string;
+  approvedAt?: string;
+
   // Confirmation state
   confirmationStatus?: ConfirmationStatus;
+  confirmationDeliveryStatus?: 'pending' | 'sent' | 'delivered' | 'failed' | 'retrying';
+  confirmationRetryCount?: number;
+  confirmationLastError?: string;
   confirmationLogs?: ConfirmationLog[];
   lastConfirmationSentAt?: string;
   lastConfirmationChannel?: ConfirmationChannel;
@@ -146,7 +167,14 @@ export interface CompanySettings {
   contactPhone: string;
   contactEmail: string;
   facebookPage: string; // Facebook Page username or ID for m.me link
+  confirmationSubjectTemplate: string;
   confirmationMessageTemplate: string;
+  enablePaidSms: boolean; // default false - Avoid paid SMS unless administrator enables it
+  autoSendOnApproval: boolean; // default true - Automatically send after admin approval
+  primaryConfirmationChannel: 'email' | 'whatsapp' | 'messenger';
+  fallbackChannel: 'whatsapp' | 'messenger' | 'none';
+  maxEmailRetries: number;
+  reschedulePageUrl?: string;
 }
 
 export interface ImportPreviewRow {

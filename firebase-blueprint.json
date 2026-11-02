@@ -30,12 +30,48 @@
         "createdAt": { "type": "string" },
         "isRecurring": { "type": "boolean" },
         "seriesId": { "type": "string" },
+        "isApproved": { "type": "boolean" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string" },
         "confirmationStatus": { "type": "string" },
+        "confirmationDeliveryStatus": { "type": "string" },
+        "confirmationRetryCount": { "type": "number" },
+        "confirmationLastError": { "type": "string" },
         "lastConfirmationSentAt": { "type": "string" },
         "lastConfirmationChannel": { "type": "string" },
         "confirmationLogs": { "type": "array" }
       },
       "required": ["id", "jobType", "address", "date", "startTime", "endTime", "fixHour", "rate"]
+    },
+    "ConfirmationLog": {
+      "title": "ConfirmationLog",
+      "description": "Permanent audit record of a booking confirmation dispatch attempt",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "channel": { "type": "string" },
+        "status": { "type": "string" },
+        "deliveryStatus": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "staffName": { "type": "string" },
+        "recipient": { "type": "string" },
+        "subject": { "type": "string" },
+        "messagePreview": { "type": "string" },
+        "fullMessage": { "type": "string" },
+        "htmlContent": { "type": "string" },
+        "retryCount": { "type": "number" },
+        "lastError": { "type": "string" },
+        "notes": { "type": "string" },
+        "rescheduleUrl": { "type": "string" },
+        "contactUrl": { "type": "string" },
+        "serviceDate": { "type": "string" },
+        "serviceTime": { "type": "string" }
+      },
+      "required": ["id", "taskId", "channel", "status", "timestamp"]
     },
     "Cleaner": {
       "title": "Cleaner",
@@ -73,20 +109,31 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "companyName": { "type": "string" },
+        "businessName": { "type": "string" },
         "contactPhone": { "type": "string" },
         "contactEmail": { "type": "string" },
-        "facebookPageUrl": { "type": "string" },
-        "savedConfirmationTemplate": { "type": "string" },
+        "facebookPage": { "type": "string" },
+        "confirmationMessageTemplate": { "type": "string" },
+        "confirmationSubjectTemplate": { "type": "string" },
+        "enablePaidSms": { "type": "boolean" },
+        "autoSendOnApproval": { "type": "boolean" },
+        "primaryConfirmationChannel": { "type": "string" },
+        "fallbackChannel": { "type": "string" },
+        "maxEmailRetries": { "type": "number" },
+        "reschedulePageUrl": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
-      "required": ["id", "companyName"]
+      "required": ["id", "businessName"]
     }
   },
   "firestore": {
     "/tasks/{taskId}": {
       "schema": "Task",
       "description": "All client cleaning schedules, tasks, and historical jobs"
+    },
+    "/confirmation_logs/{logId}": {
+      "schema": "ConfirmationLog",
+      "description": "Permanent dispatch logs of all sent, retried, and failed booking confirmations"
     },
     "/cleaners/{cleanerId}": {
       "schema": "Cleaner",

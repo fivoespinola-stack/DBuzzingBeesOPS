@@ -23,7 +23,9 @@ import {
   Send,
   ArrowUpDown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck,
+  RotateCcw
 } from 'lucide-react';
 import { Task, Cleaner, ConfirmationStatus } from '../types';
 import { formatCurrency, formatDate, formatTime12h, formatFrequency, isRecurringFrequency, isWeekend, toLocalDateString } from '../utils/formatters';
@@ -40,6 +42,9 @@ interface TaskListViewProps {
   onExportTasks: (tasksToExport: Task[]) => void;
   onSendConfirmation: (task: Task) => void;
   onBulkSendConfirmation?: (tasks: Task[]) => void;
+  onApproveBooking?: (task: Task) => void;
+  onRetryEmail?: (task: Task) => void;
+  onOpenCustomizeConfirmation?: (task: Task) => void;
 }
 
 export const TaskListView: React.FC<TaskListViewProps> = ({
@@ -53,9 +58,13 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   onExportTasks,
   onSendConfirmation,
   onBulkSendConfirmation,
+  onApproveBooking,
+  onRetryEmail,
+  onOpenCustomizeConfirmation,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  const [approvalFilter, setApprovalFilter] = useState<'all' | 'approved' | 'pending'>('all');
   const [cleanerFilter, setCleanerFilter] = useState<string>('all');
   const [clientFilter, setClientFilter] = useState<string>('all');
   const [paymentTermFilter, setPaymentTermFilter] = useState<'all' | 'Cash' | 'Invoice'>('all');
@@ -168,15 +177,13 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
       if (dateFilter === 'upcoming' && t.date < todayStr) return false;
       if (dateFilter === 'past' && t.date >= todayStr) return false;
 
-      // Confirmation Status
-      if (confirmationFilter !== 'all') {
-        const cStatus = t.confirmationStatus || 'not_sent';
-        if (cStatus !== confirmationFilter) return false;
-      }
+      // Admin Approval Filter
+      if (approvalFilter === 'approved' && !t.isApproved) return false;
+      if (approvalFilter === 'pending' && t.isApproved) return false;
 
       return true;
     });
-  }, [tasks, searchQuery, statusFilter, cleanerFilter, clientFilter, paymentTermFilter, frequencyFilter, jobTypeFilter, dateFilter, confirmationFilter, todayStr]);
+  }, [tasks, searchQuery, statusFilter, approvalFilter, cleanerFilter, clientFilter, paymentTermFilter, frequencyFilter, jobTypeFilter, dateFilter, confirmationFilter, todayStr]);
 
   // Sort tasks by Date: Newest to Oldest or Oldest to Newest
   const sortedTasks = useMemo(() => {
@@ -478,6 +485,52 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
         )}
       </div>
 
+      {/* Bulk Selection Bar with 1-Click Direct Send */}
+      {selectedTaskIds.length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 p-3 sm:px-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#FFB509] animate-pulse" />
+            <span className="text-xs font-bold text-neutral-900 dark:text-white">
+              {selectedTaskIds.length} tasks selected
+            </span>
+            <span className="text-xs text-neutral-500">
+              ({tasks.filter((t) => selectedTaskIds.includes(t.id) && t.confirmationStatus !== 'sent').length} unconfirmed)
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {onBulkSendConfirmation && (
+              <button
+                onClick={() => {
+                  const selectedTasks = tasks.filter((t) => selectedTaskIds.includes(t.id));
+                  onBulkSendConfirmation(selectedTasks);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95"
+                title="Direct 1-Click Send Confirmations to selected clients via Email First (Free). Zero popups."
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>1-Click Send Confirmations ({selectedTaskIds.length})</span>
+              </button>
+            )}
+            <button
+              onClick={() => {
+                const selected = tasks.filter((t) => selectedTaskIds.includes(t.id));
+                onExportTasks(selected);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50"
+            >
+              <Download className="w-3.5 h-3.5 text-neutral-500" />
+              <span>Export Selected</span>
+            </button>
+            <button
+              onClick={() => setSelectedTaskIds([])}
+              className="px-2.5 py-1.5 text-xs font-semibold text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Tasks Table / Cards */}
       {filteredTasks.length === 0 ? (
         <div className="p-12 text-center rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-800 bg-white dark:bg-neutral-900">
@@ -663,6 +716,13 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                                   <Copy className="w-3 h-3" />
                                 )}
                               </button>
+                              <button
+                                onClick={() => onOpenCustomizeConfirmation?.(task)}
+                                className="p-1 rounded text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 transition-colors"
+                                title="Edit client contacts (Email, Phone, Messenger)"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
                             </div>
                           )}
                         </div>
@@ -694,21 +754,92 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                         </div>
                       </td>
 
-                      {/* Confirmation Status Badge */}
+                      {/* Confirmation Status & 1-Click Send Action */}
                       <td className="py-3 px-3 xl:px-4 whitespace-nowrap">
-                        {(() => {
-                          const meta = getConfirmationStatusMeta(task.confirmationStatus);
-                          return (
-                            <button
-                              onClick={() => onSendConfirmation(task)}
-                              title="Click to Send Confirmation or update status"
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all hover:scale-105 shadow-2xs ${meta.bgClass} ${meta.textClass} ${meta.borderClass}`}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${meta.dotClass}`} />
-                              <span>{meta.label}</span>
-                            </button>
-                          );
-                        })()}
+                        <div className="flex flex-col items-start gap-1.5">
+                          {/* Approval Row */}
+                          <div className="flex items-center gap-1.5">
+                            {!task.isApproved ? (
+                              <button
+                                onClick={() => onApproveBooking && onApproveBooking(task)}
+                                title="Approve booking (Marks booking as verified by Admin; no automatic email is sent)"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 transition-colors shadow-2xs"
+                              >
+                                <ShieldCheck className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                <span>Approve Booking</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => onApproveBooking && onApproveBooking(task)}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100/60 transition-colors"
+                                title={`Approved by ${task.approvedBy || 'Admin'}. Click to toggle approval.`}
+                              >
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>Approved</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* 1-Click Send Button & Status */}
+                          <div className="flex items-center gap-1.5">
+                            {(!task.confirmationStatus || task.confirmationStatus === 'not_sent') ? (
+                              <button
+                                onClick={() => onSendConfirmation(task)}
+                                title="Direct 1-Click Send Confirmation via Email First (Free). Zero popups."
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10.5px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-all active:scale-95"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>1-Click Send</span>
+                              </button>
+                            ) : (
+                              (() => {
+                                const meta = getConfirmationStatusMeta(task.confirmationStatus);
+                                return (
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-bold border ${meta.bgClass} ${meta.textClass} ${meta.borderClass}`}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full ${meta.dotClass}`} />
+                                    <span>{meta.label}</span>
+                                  </span>
+                                );
+                              })()
+                            )}
+
+                            {/* Resend 1-Click button if already sent */}
+                            {task.confirmationStatus === 'sent' && (
+                              <button
+                                onClick={() => onSendConfirmation(task)}
+                                title="1-Click Re-send Confirmation Email (Free)"
+                                className="p-1 rounded-md text-neutral-400 hover:text-emerald-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                              </button>
+                            )}
+
+                            {/* Retry Action if Email failed */}
+                            {(task.confirmationStatus === 'failed' || task.confirmationDeliveryStatus === 'failed') && (
+                              <button
+                                onClick={() => onRetryEmail ? onRetryEmail(task) : onSendConfirmation(task)}
+                                title="Email delivery failed. 1-Click retry sending confirmation email."
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 hover:bg-rose-200 transition-colors shadow-2xs"
+                              >
+                                <RotateCcw className="w-2.5 h-2.5 text-rose-600" />
+                                <span>Retry</span>
+                              </button>
+                            )}
+
+                            {/* Optional Customize / Preview Icon Button */}
+                            {onOpenCustomizeConfirmation && (
+                              <button
+                                onClick={() => onOpenCustomizeConfirmation(task)}
+                                title="Preview template / view confirmation logs"
+                                className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </td>
 
                       {/* Job & Address */}
@@ -991,15 +1122,52 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
-                    <button
-                      onClick={() => onSendConfirmation(task)}
-                      className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-                      title="Send Confirmation"
-                    >
-                      <Send className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>Send Confirmation</span>
-                    </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(!task.confirmationStatus || task.confirmationStatus === 'not_sent') ? (
+                        <button
+                          onClick={() => onSendConfirmation(task)}
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs flex items-center gap-1.5 transition-all active:scale-95"
+                          title="Direct 1-Click Send Confirmation via Email First (Free). Zero popups."
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>1-Click Send</span>
+                        </button>
+                      ) : (
+                        (() => {
+                          const meta = getConfirmationStatusMeta(task.confirmationStatus);
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-bold border ${meta.bgClass} ${meta.textClass} ${meta.borderClass}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${meta.dotClass}`} />
+                              <span>{meta.label}</span>
+                            </span>
+                          );
+                        })()
+                      )}
+
+                      {task.confirmationStatus === 'sent' && (
+                        <button
+                          onClick={() => onSendConfirmation(task)}
+                          title="1-Click Re-send Confirmation Email (Free)"
+                          className="p-1 rounded-md text-neutral-400 hover:text-emerald-600 border border-neutral-200 dark:border-neutral-700"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                        </button>
+                      )}
+
+                      {(task.confirmationStatus === 'failed' || task.confirmationDeliveryStatus === 'failed') && (
+                        <button
+                          onClick={() => onRetryEmail ? onRetryEmail(task) : onSendConfirmation(task)}
+                          title="Retry confirmation email"
+                          className="px-2 py-0.5 text-[10px] font-bold rounded bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          <span>Retry</span>
+                        </button>
+                      )}
+                    </div>
 
                     <div className="flex items-center gap-1.5">
                       <button
