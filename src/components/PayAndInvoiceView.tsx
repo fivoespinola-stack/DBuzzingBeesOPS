@@ -9,7 +9,7 @@ import {
   TrendingUp, 
   Users, 
   Clock, 
-  CheckCircle, 
+  CheckCircle, ``
   Calendar,
   CalendarDays,
   CalendarRange,
@@ -22,7 +22,15 @@ import {
   Layers
 } from 'lucide-react';
 import { Task, Cleaner, CleanerPaySummary, CleanerWeeklyPaymentRecord } from '../types';
-import { formatCurrency, getWeekStart, getWeekLabel, formatDate } from '../utils/formatters';
+import { 
+  formatCurrency, 
+  getWeekStart, 
+  getWeekLabel, 
+  formatDate,
+  getCleanerTaskHours,
+  getTaskDurationHours,
+  toLocalDateString
+} from '../utils/formatters';
 import { exportWeeklyPaySlipExcel, exportFinancialPeriodExcel } from '../services/excelService';
 import { loadCleanerWeeklyPayments, saveCleanerWeeklyPayments } from '../services/storage';
 import { BeeLogo } from './BeeLogo';
@@ -147,7 +155,7 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
     for (let i = 0; i < 7; i++) {
       const d = new Date(selectedWeekStart);
       d.setDate(d.getDate() + i);
-      dates.push(d.toISOString().split('T')[0]);
+      dates.push(toLocalDateString(d));
     }
     return dates;
   }, [selectedWeekStart]);
@@ -220,20 +228,23 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
       const monthKey = `${selectedYear}-${String(mIdx + 1).padStart(2, '0')}`;
       const mTasks = tasks.filter((t) => t.date && t.date.startsWith(monthKey));
       const completed = mTasks.filter((t) => t.completed);
-      const hoursWorked = completed.reduce((sum, t) => sum + t.fixHour, 0);
 
+      // Client Invoiced: Fixed Price flat charge or Hourly (rate * requested fixHour)
       const totalInvoiced = mTasks.reduce((sum, t) => {
         const rev = t.payType === 'Fixed Price' ? t.rate : t.rate * t.fixHour;
         return sum + rev;
       }, 0);
 
-      // Wages: sum of hours * cleaner rate for completed tasks
+      // Cleaner Wages: strictly calculated based on the difference between the actual start time and end time of the task
       let cleanerWages = 0;
+      let hoursWorked = 0;
       completed.forEach((t) => {
+        const actualHours = getCleanerTaskHours(t);
+        hoursWorked += actualHours * (t.assignedCleanerIds.length || 1);
         t.assignedCleanerIds.forEach((cId) => {
           const c = cleaners.find((cl) => cl.id === cId);
           const rate = c?.hourlyRate || 28;
-          cleanerWages += (t.fixHour * rate) / (t.assignedCleanerIds.length || 1);
+          cleanerWages += actualHours * rate;
         });
       });
 
@@ -272,8 +283,9 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
 
       const completedTasks = cleanerPeriodTasks.filter((t) => t.completed);
 
-      const completedHours = completedTasks.reduce((sum, t) => sum + t.fixHour, 0);
-      const scheduledHours = cleanerPeriodTasks.reduce((sum, t) => sum + t.fixHour, 0);
+      // Hours worked calculated based on the difference between start time and end time
+      const completedHours = completedTasks.reduce((sum, t) => sum + getCleanerTaskHours(t), 0);
+      const scheduledHours = cleanerPeriodTasks.reduce((sum, t) => sum + getCleanerTaskHours(t), 0);
 
       const regularPay = cleaner.hourlyRate * completedHours;
 
@@ -1278,37 +1290,49 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                   No tasks assigned to this cleaner in this period ({periodLabel}).
                 </p>
               ) : (
-                selectedSummaryForModal.tasks.map((t) => (
-                  <div
-                    key={t.id}
-                    className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 flex items-center justify-between text-xs"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-neutral-900 dark:text-white text-sm">
-                          {t.clientName || 'Client Unspecified'}
-                        </span>
-                        <span className="font-mono text-[11px] text-neutral-500">
-                          {formatDate(t.date)} ({t.fixHour}h)
-                        </span>
-                        {t.invoiceNumber && (
-                          <span className="font-mono text-[10px] bg-neutral-200 dark:bg-neutral-700 px-1.5 py-0.5 rounded font-semibold text-neutral-700 dark:text-neutral-300">
-                            {t.invoiceNumber}
+                selectedSummaryForModal.tasks.map((t) => {
+                  const actualHours = getCleanerTaskHours(t);
+                  const cleanerSalary = actualHours * selectedSummaryForModal.hourlyRate;
+                  return (
+                    <div
+                      key={t.id}
+                      className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-neutral-900 dark:text-white text-sm">
+                            {t.clientName || 'Client Unspecified'}
                           </span>
-                        )}
+                          <span className="font-mono text-[11px] text-neutral-500">
+                            {formatDate(t.date)} · {t.startTime} – {t.endTime} ({actualHours.toFixed(1)} hrs actual)
+                          </span>
+                          {t.assignedCleanerIds?.length > 1 && (
+                            <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 px-1.5 py-0.5 rounded font-semibold">
+                              Team of {t.assignedCleanerIds.length}
+                            </span>
+                          )}
+                          {t.invoiceNumber && (
+                            <span className="font-mono text-[10px] bg-neutral-200 dark:bg-neutral-700 px-1.5 py-0.5 rounded font-semibold text-neutral-700 dark:text-neutral-300">
+                              {t.invoiceNumber}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-neutral-500 mt-0.5">
+                          {t.address} · Client fixed: {t.fixHour}h
+                        </p>
                       </div>
-                    </div>
 
-                    <div className="text-right">
-                      <div className="font-mono-numbers font-bold text-neutral-900 dark:text-white">
-                        {formatCurrency(t.fixHour * selectedSummaryForModal.hourlyRate)}
+                      <div className="text-right">
+                        <div className="font-mono-numbers font-bold text-neutral-900 dark:text-white">
+                          {formatCurrency(cleanerSalary)}
+                        </div>
+                        <span className={`text-[10px] font-semibold ${t.completed ? 'text-emerald-600' : 'text-amber-600'}`}>
+                          {t.completed ? 'Completed' : 'Pending'}
+                        </span>
                       </div>
-                      <span className={`text-[10px] font-semibold ${t.completed ? 'text-emerald-600' : 'text-amber-600'}`}>
-                        {t.completed ? 'Completed' : 'Pending'}
-                      </span>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
 
               {/* Special task allowance line */}
@@ -1423,18 +1447,34 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 font-mono">
-                  {selectedSummaryForModal.tasks.map((t) => (
-                    <tr key={t.id}>
-                      <td className="py-1.5 text-neutral-600">{t.date}</td>
-                      <td className="py-1.5 text-neutral-900 truncate max-w-[200px] font-sans font-medium">
-                        {t.clientName || 'Client Unspecified'}
-                      </td>
-                      <td className="py-1.5 text-right">{t.fixHour}h</td>
-                      <td className="py-1.5 text-right">
-                        ${(t.fixHour * selectedSummaryForModal.hourlyRate).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {selectedSummaryForModal.tasks.map((t) => {
+                    const cleanerHours = getCleanerTaskHours(t);
+                    const cleanerPay = cleanerHours * selectedSummaryForModal.hourlyRate;
+                    return (
+                      <tr key={t.id}>
+                        <td className="py-2 text-neutral-600 align-top">{t.date}</td>
+                        <td className="py-2 text-neutral-900 font-sans font-medium align-top">
+                          <div className="truncate max-w-[210px]">
+                            {t.clientName || 'Client Unspecified'}
+                          </div>
+                          {t.startTime && t.endTime && (
+                            <div className="text-[10px] text-neutral-500 font-mono font-normal">
+                              {t.startTime} – {t.endTime}
+                              {t.assignedCleanerIds?.length > 1 && (
+                                <span className="ml-1 text-amber-700 font-sans">· Team of {t.assignedCleanerIds.length}</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2 text-right align-top font-bold text-neutral-900">
+                          {cleanerHours}h
+                        </td>
+                        <td className="py-2 text-right align-top font-bold text-neutral-900">
+                          ${cleanerPay.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {selectedSummaryForModal.tasks.length === 0 && (
                     <tr>
                       <td colSpan={4} className="py-2 text-center text-neutral-400 font-sans">

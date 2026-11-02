@@ -11,7 +11,11 @@ import {
   getNextClientNumber,
   findExistingClientNumber,
   isWeekend,
-  adjustDateStringToWeekday
+  adjustDateStringToWeekday,
+  getTaskDurationHours,
+  getEstimatedCompletionHours,
+  getRecurrenceCadenceSummary,
+  toLocalDateString
 } from '../utils/formatters';
 
 interface TaskModalProps {
@@ -53,7 +57,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [clientMessenger, setClientMessenger] = useState('');
-  const [clientPreferredChannel, setClientPreferredChannel] = useState<'whatsapp' | 'messenger' | 'sms' | 'any'>('any');
+  const [clientPreferredChannel, setClientPreferredChannel] = useState<'whatsapp' | 'messenger' | 'sms' | 'email' | 'any'>('any');
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [confirmationStatus, setConfirmationStatus] = useState<ConfirmationStatus>('not_sent');
   const [date, setDate] = useState('');
@@ -169,7 +173,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setClientPreferredChannel('any');
         setSpecialInstructions('');
         setConfirmationStatus('not_sent');
-        const todayStr = defaultDate || new Date().toISOString().split('T')[0];
+        const todayStr = defaultDate || toLocalDateString();
         setDate(todayStr);
         setStartTime('09:00');
         setFixHour(3.0);
@@ -211,22 +215,52 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setClientNumber(getNextClientNumber(tasks));
   };
 
-  // When start time or fixHour changes, update end time
+  // Helper to compute estimated team completion duration
+  // Fixed hours represent 1-cleaner time; with 2 cleaners, completion time reduces (e.g. 4h / 2 = 2h)
+  const getCompletionDuration = (baseFixHours: number, cleanerIds: string[]) => {
+    return getEstimatedCompletionHours(baseFixHours, cleanerIds.length);
+  };
+
+  // When start time or fixHour changes, update end time based on team size
   const handleStartTimeChange = (newStart: string) => {
     setStartTime(newStart);
-    setEndTime(calculateEndTime(newStart, fixHour));
+    const duration = getCompletionDuration(fixHour, assignedCleanerIds);
+    setEndTime(calculateEndTime(newStart, duration));
   };
 
   const handleFixHourChange = (hours: number) => {
     const validHours = Math.max(0.25, hours);
     setFixHour(validHours);
-    setEndTime(calculateEndTime(startTime, validHours));
+    const duration = getCompletionDuration(validHours, assignedCleanerIds);
+    setEndTime(calculateEndTime(startTime, duration));
   };
 
   const toggleCleanerAssignment = (id: string) => {
-    setAssignedCleanerIds((prev) =>
-      prev.includes(id) ? prev.filter((cId) => cId !== id) : [...prev, id]
-    );
+    setAssignedCleanerIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((cId) => cId !== id) : [...prev, id];
+      // Automatically adjust estimated end time when team size changes
+      const duration = getCompletionDuration(fixHour, next);
+      setEndTime(calculateEndTime(startTime, duration));
+      return next;
+    });
+  };
+
+  const handleSelectAllCleaners = () => {
+    const allIds = cleaners.map((c) => c.id);
+    setAssignedCleanerIds(allIds);
+    const duration = getCompletionDuration(fixHour, allIds);
+    setEndTime(calculateEndTime(startTime, duration));
+  };
+
+  const handleClearAllCleaners = () => {
+    setAssignedCleanerIds([]);
+    const duration = getCompletionDuration(fixHour, []);
+    setEndTime(calculateEndTime(startTime, duration));
+  };
+
+  const handleSyncEndTimeToTeamSize = () => {
+    const duration = getCompletionDuration(fixHour, assignedCleanerIds);
+    setEndTime(calculateEndTime(startTime, duration));
   };
 
   const validate = (): boolean => {
@@ -425,14 +459,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 font-bold text-neutral-900 dark:text-white">
                       <CalendarDays className="w-4 h-4 text-amber-600" />
-                      <span>Cleaning Calendar (Next 6 Months)</span>
+                      <span>Cleaning Calendar (Next 3 Months)</span>
                     </div>
                     <span className="px-2 py-0.5 rounded-full font-bold bg-[#FFB509] text-neutral-950 text-[10px]">
-                      {getScheduledDatesForSixMonths(date || new Date().toISOString().split('T')[0], isCustomFrequency ? customFrequency : frequency).length} Visits
+                      {getScheduledDatesForSixMonths(date || toLocalDateString(), isCustomFrequency ? customFrequency : frequency).length} Visits
                     </span>
                   </div>
                   <p className="text-[11px] text-neutral-600 dark:text-neutral-300">
-                    Frequency <strong className="text-neutral-900 dark:text-white">{formatFrequency(isCustomFrequency ? customFrequency : frequency)}</strong> will automatically populate the cleaning calendar for the next 6 months. All visits strictly skip Saturdays and Sundays (reserved for special tasks).
+                    Cadence: <strong className="text-neutral-900 dark:text-white">{getRecurrenceCadenceSummary(date || toLocalDateString(), isCustomFrequency ? customFrequency : frequency)}</strong>. Recurring bookings strictly preserve their assigned weekdays and skip Saturdays and Sundays (reserved for special tasks).
                   </p>
                   <label className="flex items-center gap-2 cursor-pointer font-semibold select-none pt-0.5 text-[11.5px] text-neutral-900 dark:text-white">
                     <input
@@ -441,7 +475,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setApplySixMonths(e.target.checked)}
                       className="h-4 w-4 rounded border-neutral-300 dark:border-neutral-600 text-[#FFB509] focus:ring-[#FFB509]"
                     />
-                    <span>Schedule recurring visits in the cleaning calendar for the next 6 months (Weekdays only)</span>
+                    <span>Schedule recurring visits in the cleaning calendar for the next 3 months (Weekdays only)</span>
                   </label>
                 </div>
               )}
@@ -526,7 +560,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <input
                 id="task-client-phone"
                 type="tel"
-                placeholder="e.g. +1 (555) 019-2834"
+                placeholder="e.g. 0412 884 921"
                 value={clientPhone}
                 onChange={(e) => setClientPhone(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white"
@@ -581,13 +615,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <select
                   id="task-preferred-channel"
                   value={clientPreferredChannel}
-                  onChange={(e) => setClientPreferredChannel(e.target.value as 'whatsapp' | 'messenger' | 'sms' | 'any')}
+                  onChange={(e) => setClientPreferredChannel(e.target.value as 'whatsapp' | 'messenger' | 'sms' | 'email' | 'any')}
                   className="w-full px-3 py-1.5 text-xs bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white"
                 >
                   <option value="any">Any / No Preference</option>
                   <option value="whatsapp">WhatsApp</option>
                   <option value="messenger">Facebook Messenger</option>
                   <option value="sms">SMS Text</option>
+                  <option value="email">Email</option>
                 </select>
               </div>
 
@@ -633,10 +668,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <div className="mt-2 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs space-y-1.5">
                   <div className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-300">
                     <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                    <span>Weekend Restricted</span>
+                    <span>Weekend Restricted for Recurring Schedule</span>
                   </div>
                   <p className="text-[11px] text-neutral-700 dark:text-neutral-300 leading-tight">
-                    Recurring client tasks cannot be scheduled on Saturday or Sunday. Weekends are reserved for special tasks only.
+                    Recurring client schedules cannot be set on Saturday or Sunday. Weekends are reserved for special tasks only or special client requests.
                   </p>
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
                     <button
@@ -654,16 +689,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       }}
                       className="px-2 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold text-[10px] hover:bg-neutral-300 dark:hover:bg-neutral-600 transition-colors cursor-pointer"
                     >
-                      Set to One-off
+                      Set to Special Task (One-off)
                     </button>
                   </div>
                 </div>
               )}
               {isWeekend(date) && !isRecurringFrequency(isCustomFrequency ? customFrequency : frequency) && (
-                <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-                  Weekend slot: Special Task (One-off / Flexible)
-                </p>
+                <div className="mt-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] space-y-0.5">
+                  <span className="text-amber-800 dark:text-amber-300 font-bold flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    Special Weekend Task Authorized
+                  </span>
+                  <p className="text-neutral-600 dark:text-neutral-400">
+                    Permitted for one-off / special client requests on Saturdays & Sundays.
+                  </p>
+                </div>
               )}
             </div>
 
@@ -683,10 +723,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             </div>
 
-            <div>
-              <label htmlFor="task-end-time" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1.5">
-                End Time
-              </label>
+              <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="task-end-time" className="block text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                  End Time
+                </label>
+                {assignedCleanerIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSyncEndTimeToTeamSize}
+                    title="Calculate end time automatically based on team size and fix hours"
+                    className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    <Sparkles className="w-2.5 h-2.5" />
+                    Auto-calc from team
+                  </button>
+                )}
+              </div>
               <div className="relative">
                 <Clock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3" />
                 <input
@@ -697,8 +750,37 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   className="w-full pl-10 pr-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] focus:border-[#FFB509] text-neutral-900 dark:text-white font-mono"
                 />
               </div>
+              {startTime && endTime && (
+                <p className="mt-1 text-[11px] text-neutral-500 font-mono">
+                  Elapsed: <strong className="text-neutral-800 dark:text-neutral-200">{getTaskDurationHours(startTime, endTime)} hrs</strong> (salary basis)
+                </p>
+              )}
             </div>
           </div>
+
+          {/* Team Duration Indicator */}
+          {assignedCleanerIds.length > 1 && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+              <div className="text-amber-950 dark:text-amber-200">
+                <span className="font-bold">Team of {assignedCleanerIds.length} cleaners assigned:</span>{' '}
+                Estimated job completion time reduced to{' '}
+                <strong className="font-bold underline decoration-[#FFB509] decoration-2">
+                  {getEstimatedCompletionHours(fixHour, assignedCleanerIds.length)} hrs
+                </strong>{' '}
+                (client fixed hours: {fixHour} hrs).
+                <div className="text-[11px] text-neutral-600 dark:text-neutral-400 mt-0.5">
+                  Each cleaner is paid for actual elapsed hours ({getTaskDurationHours(startTime, endTime)} hrs) at their individual rate.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleSyncEndTimeToTeamSize}
+                className="shrink-0 px-2.5 py-1 text-xs font-bold rounded-lg bg-[#FFB509] text-neutral-950 hover:bg-[#EAA300] transition-colors cursor-pointer"
+              >
+                Sync End Time
+              </button>
+            </div>
+          )}
 
           {/* Fix Hour, Rate, Pay Type, Payment Term */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 rounded-xl bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-200 dark:border-neutral-800">
@@ -716,6 +798,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 onChange={(e) => handleFixHourChange(parseFloat(e.target.value) || 0)}
                 className="w-full px-3.5 py-2 text-sm bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white font-mono"
               />
+              <p className="mt-1 text-[10.5px] text-neutral-500">
+                Single-cleaner client scope (billed to client)
+              </p>
               {errors.fixHour && <p className="mt-1 text-xs text-red-500">{errors.fixHour}</p>}
             </div>
 
@@ -798,16 +883,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <div className="flex items-center gap-2 text-xs">
                   <button
                     type="button"
-                    onClick={() => setAssignedCleanerIds(cleaners.map((c) => c.id))}
-                    className="text-amber-600 dark:text-amber-400 hover:underline font-semibold"
+                    onClick={handleSelectAllCleaners}
+                    className="text-amber-600 dark:text-amber-400 hover:underline font-semibold cursor-pointer"
                   >
                     Select All
                   </button>
                   <span className="text-neutral-300 dark:text-neutral-700">|</span>
                   <button
                     type="button"
-                    onClick={() => setAssignedCleanerIds([])}
-                    className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:underline"
+                    onClick={handleClearAllCleaners}
+                    className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:underline cursor-pointer"
                   >
                     Clear All
                   </button>

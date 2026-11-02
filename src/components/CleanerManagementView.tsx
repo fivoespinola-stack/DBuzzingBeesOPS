@@ -14,7 +14,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { Cleaner, Task } from '../types';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getCleanerTaskHours } from '../utils/formatters';
 
 interface CleanerManagementViewProps {
   cleaners: Cleaner[];
@@ -126,7 +126,7 @@ export const CleanerManagementView: React.FC<CleanerManagementViewProps> = ({
         {cleaners.map((cleaner) => {
           const cleanerTasks = tasks.filter((t) => t.assignedCleanerIds.includes(cleaner.id));
           const completedTasks = cleanerTasks.filter((t) => t.completed);
-          const totalHours = cleanerTasks.reduce((sum, t) => sum + t.fixHour, 0);
+          const totalHours = cleanerTasks.reduce((sum, t) => sum + getCleanerTaskHours(t), 0);
 
           return (
             <div
@@ -272,7 +272,7 @@ export const CleanerManagementView: React.FC<CleanerManagementViewProps> = ({
                   </label>
                   <input
                     type="tel"
-                    placeholder="+1 (555) 000-0000"
+                    placeholder="e.g. 0412 884 921"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     className="w-full px-3.5 py-2 text-sm bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white"

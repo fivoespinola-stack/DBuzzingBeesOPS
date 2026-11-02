@@ -360,7 +360,7 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
                     <Phone className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-2.5" />
                     <input
                       type="tel"
-                      placeholder="e.g. 0412 345 678"
+                      placeholder="e.g. 0412 884 921"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FFB509]"

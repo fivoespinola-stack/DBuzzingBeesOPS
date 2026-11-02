@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { Task, Cleaner, ImportPreviewRow, CleanerPaySummary, Frequency, PaymentTerm } from '../types';
+import { getCleanerTaskHours } from '../utils/formatters';
 
 // Helper to format Excel serial date or string date
 export const normalizeExcelDate = (val: any): string => {
@@ -368,15 +369,21 @@ export const exportWeeklyPaySlipExcel = (paySummary: CleanerPaySummary, weekLabe
   XLSX.utils.book_append_sheet(wb, wsOverview, 'Pay Summary');
 
   // Tasks breakdown
-  const tasksBreakdown = paySummary.tasks.map(t => ({
-    'Date': t.date,
-    'Client Name': t.clientName || 'N/A',
-    'Invoice #': t.invoiceNumber,
-    'Hours': t.fixHour,
-    'Cleaners on Job': t.assignedCleanerIds.length,
-    'Pay Share ($)': ((t.fixHour * paySummary.hourlyRate) / (t.assignedCleanerIds.length || 1)).toFixed(2),
-    'Status': t.completed ? 'Completed' : 'Pending',
-  }));
+  const tasksBreakdown = paySummary.tasks.map(t => {
+    const actualHours = getCleanerTaskHours(t);
+    const earnings = actualHours * paySummary.hourlyRate;
+    return {
+      'Date': t.date,
+      'Client Name': t.clientName || 'N/A',
+      'Invoice #': t.invoiceNumber || 'N/A',
+      'Time Slot': `${t.startTime || '09:00'} - ${t.endTime || '11:00'}`,
+      'Actual Hours Worked': actualHours,
+      'Client Scope (Fixed Hrs)': t.fixHour,
+      'Cleaners on Job': t.assignedCleanerIds.length,
+      'Pay Share ($)': earnings.toFixed(2),
+      'Status': t.completed ? 'Completed' : 'Pending',
+    };
+  });
 
   const wsTasks = XLSX.utils.json_to_sheet(tasksBreakdown);
   XLSX.utils.book_append_sheet(wb, wsTasks, 'Jobs Breakdown');

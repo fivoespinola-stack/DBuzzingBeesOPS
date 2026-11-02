@@ -1,0 +1,104 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A scheduled or completed cleaning job",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "jobType": { "type": "string" },
+        "address": { "type": "string" },
+        "clientNumber": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "clientMessenger": { "type": "string" },
+        "clientPreferredChannel": { "type": "string" },
+        "fixHour": { "type": "number" },
+        "rate": { "type": "number" },
+        "payType": { "type": "string" },
+        "paymentTerm": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "assignedCleanerIds": { "type": "array" },
+        "remarks": { "type": "string" },
+        "specialInstructions": { "type": "string" },
+        "date": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "frequency": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "isRecurring": { "type": "boolean" },
+        "seriesId": { "type": "string" },
+        "confirmationStatus": { "type": "string" },
+        "lastConfirmationSentAt": { "type": "string" },
+        "lastConfirmationChannel": { "type": "string" },
+        "confirmationLogs": { "type": "array" }
+      },
+      "required": ["id", "jobType", "address", "date", "startTime", "endTime", "fixHour", "rate"]
+    },
+    "Cleaner": {
+      "title": "Cleaner",
+      "description": "Cleaner staff profile and payment configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "hourlyRate": { "type": "number" },
+        "specialTaskPayPerWeek": { "type": "number" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "name", "hourlyRate", "status"]
+    },
+    "StaffUser": {
+      "title": "StaffUser",
+      "description": "Authenticated staff member account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "username", "name", "role", "status"]
+    },
+    "CompanySettings": {
+      "title": "CompanySettings",
+      "description": "DBuzzingBees business settings and templates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyName": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "contactEmail": { "type": "string" },
+        "facebookPageUrl": { "type": "string" },
+        "savedConfirmationTemplate": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "companyName"]
+    }
+  },
+  "firestore": {
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "All client cleaning schedules, tasks, and historical jobs"
+    },
+    "/cleaners/{cleanerId}": {
+      "schema": "Cleaner",
+      "description": "Cleaner roster and pay rates"
+    },
+    "/staff_users/{userId}": {
+      "schema": "StaffUser",
+      "description": "Staff users and roles"
+    },
+    "/settings/{settingsId}": {
+      "schema": "CompanySettings",
+      "description": "Global company configuration and confirmation templates"
+    }
+  }
+}

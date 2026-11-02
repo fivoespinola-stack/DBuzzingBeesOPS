@@ -1,168 +1,109 @@
 # DBuzzingBees — Cleaning Business Operations & Scheduling Platform
 
-**DBuzzingBees** is a business management and scheduling application designed specifically for residential and commercial cleaning operations. It coordinates cleaning tasks, cleaner roster assignments, automated 6-month recurring scheduling, payroll calculation, client invoicing, and Excel spreadsheet imports/exports.
+**DBuzzingBees** is a full-featured, production-ready operations and scheduling platform engineered specifically for residential and commercial cleaning businesses. It manages client schedules, cleaner roster assignments, automated 3-month recurring scheduling, payroll calculations, client invoicing, booking confirmations, and cloud data persistence via Google Cloud Firestore.
 
 ---
 
-## Key Features
+## Key Production Features
 
-### 1. Operations Dashboard
-- **Key Metrics At A Glance**: Track total cleaning tasks, completed vs. pending cleans, active cleaners, and weekly revenue/wage projections.
-- **Urgent & Today's Schedule**: Real-time overview of tasks scheduled for today and upcoming visits.
-- **Fast Navigation**: One-click jumps to the task list, calendar, cleaner roster, and payroll.
+### 1. Database-Backed Cloud Persistence (Google Cloud Firestore)
+- **Real-Time Cross-Device Sync**: All client schedules, cleaner profiles, task updates, invoices, payment records, and confirmation logs are securely stored in Google Cloud Firestore and sync live across all staff devices and browser sessions.
+- **Offline & Low-Latency Caching**: Utilizes fast local state caching while continuously persisting changes to Firestore collections with secure rule enforcement.
+- **Clean Slate Testing**: Start with an unpopulated, clean slate database to manually enter real client and cleaner records, verify calculations, and validate schedules without test data contamination.
 
-### 2. Task Management & Client Scheduling
-- **Task List View**: Filterable by date, cleaner assignment, payment type, completion status, or search query.
-- **Client Identification**: Displays client names and addresses clearly across all tables and cards.
-- **Auto-Generated Client Numbers**: Unique identifiers (e.g., `CL-1042`) automatically assigned when adding new clients.
-- **Task Duplication & Editing**: Duplicate existing cleanings or modify details on the fly.
+### 2. Task Management & Schedule Pagination
+- **Configurable Pagination**: Client schedules in the Task List default to a maximum of **20 records per page**, with options to toggle between **20, 50, or 100 items per page**, complete with range counters and interactive page controls.
+- **Date Sorting**: Sort all upcoming and past schedules by:
+  - **Newest to Oldest** (descending date)
+  - **Oldest to Newest** (ascending date)
+  - Quick-sortable by clicking the "Date & Time" table column header.
+- **Comprehensive Filtering**: Filter by job status, cleaner assignment, payment terms (Cash vs. Invoice), date ranges, or search query.
+- **Client & Job Identifiers**: Auto-generates unique client identifiers (e.g. `CL-1042`) and invoice references (e.g. `INV-2026-101`).
 
-### 3. Cleaning Calendar (With 6-Month Forward Projection)
-- **Month, Week, & Day Views**: Client names appear directly on calendar blocks for fast dispatch recognition.
-- **Automated Recurrence Engine**: Automatically schedules recurring cleans across a 6-month horizon for daily, weekly, bi-weekly/fortnightly, and monthly jobs.
-- **Weekend Exclusion Rule**: Recurring client cleans never fall on Saturday or Sunday—weekends are reserved exclusively for special or one-off assignments.
+### 3. Recurring Scheduling Engine (Strict 3-Month Horizon)
+- **3-Month Maximum Projection**: Recurring client schedules are strictly generated and projected within a **3-month period** across daily, weekly, fortnightly, every-3rd-week, and monthly intervals.
+- **Weekend Exclusion Rule**: Recurring client appointments automatically avoid Saturday and Sunday, keeping weekends clear for specialized commercial or one-off bookings.
+- **Interactive Schedule Preview**: Visual badge indicators display exact visit counts scheduled within the next 3 months directly inside the Task Modal.
 
-### 4. Cleaner Roster & Job Breakdown
-- **Cleaner Profiles**: Maintain cleaner contact details (phone, email) and custom hourly pay rates.
-- **Workload Tracking**: View individual cleaner schedules, assigned clients, and job counts.
+### 4. Client Booking Confirmation System (WhatsApp, Messenger, SMS, Email)
+- **Multi-Channel Dispatch**:
+  - **WhatsApp**: Click-to-chat `wa.me` links with auto-formatted, branded messages.
+  - **Facebook Messenger**: `m.me` deep links directly to client chat or company page.
+  - **SMS Text**: Native `sms:` mobile links with 1-click clipboard message copy.
+  - **Email**: Native `mailto:` links with prefilled subject and message body.
+- **Channel Contact Validation**: Channels are automatically checked and disabled if contact info is missing, with inline hints and a quick-edit contact drawer right inside the modal.
+- **Customizable Message Templates**:
+  - Live editable message preview with template placeholders (`{{clientName}}`, `{{serviceType}}`, `{{date}}`, `{{startTime}}`, `{{address}}`, `{{cleaners}}`, `{{specialInstructions}}`, `{{businessPhone}}`).
+  - Customizable default template saved for reuse.
+- **Status & Audit Trail**:
+  - Statuses: `Not Sent`, `Confirmation Sent`, `Confirmed`, `Needs Reschedule`.
+  - Detailed audit logs track timestamp, channel used, recipient, and staff member who sent it.
+- **Bulk Confirmation Dispatch**:
+  - Select multiple upcoming jobs from the Task List or click "Confirm Tomorrow" to dispatch confirmations in batches.
 
-### 5. Pay & Invoicing (Weekly, Monthly & Annual)
-- **Wage Calculation**: Automatically computes cleaner wages based on allocated cleaning hours and cleaner-specific pay rates.
-- **Client Billing & Margins**: Calculates client charges and profit margins per job and aggregate period.
-- **Flexible Summary Views**:
-  - Weekly view with week selector
-  - Monthly view
-  - Multi-month or full-year summary options
-- **Payment Status Tracking**: Toggle cleaner payment records (Paid vs. Unpaid) with persistent status history.
-- **Clear Reference**: Job breakdowns display Client Name and Job Address.
+### 5. Cleaner Management & Accurate Financial Calculations
+- **Cleaner Profiles & Custom Rates**: Track active cleaners, individual hourly pay rates, and special weekly stipends/allowances.
+- **Wages & Pay Calculation**:
+  - Cleaner Wages = `(Allocated Task Hours × Cleaner Hourly Rate) ÷ Number of Cleaners`
+  - Weekly stipend additions for active cleaners.
+- **Client Invoicing**:
+  - Hourly jobs: `Hours × Rate`
+  - Fixed Price jobs: Flat fee billing
+- **Commission & Profit Margins**:
+  - Gross Profit / Margin = `Total Invoiced - Total Cleaner Wages`
+  - Real-time margin percentages displayed across weekly, monthly, and annual views.
+- **Payment Tracking**:
+  - Toggle and track paid/unpaid status with persistent timestamp logs and payment notes.
+  - Clear separation of **Cash** vs. **Invoice** payment terms.
 
 ### 6. Excel (.xlsx) Import & Export
-- **Spreadsheet Integration**: Import tasks and cleaners directly from Excel spreadsheets (`.xlsx`).
-- **Comprehensive Backups**: Export current task lists, cleaner rosters, and payroll breakdowns to standard Excel files.
+- Import and export tasks, cleaner rosters, and weekly/monthly pay slips in standard Microsoft Excel (`.xlsx`) format.
 
-### 7. Staff Users & Access Control
-- **Role-Based Accounts**: Supports `admin`, `manager`, `supervisor`, and `staff` access levels.
-- **Staff User Management**: Admins can add new team members, edit roles, update credentials, and toggle account status (`Active` / `Inactive`).
-- **Inactivity Auto-Logout**: Unattended sessions automatically expire after 30 minutes of inactivity to protect client addresses and pricing data. Active user interactions automatically extend the timer.
-
-### 8. Client Booking Confirmation System (Messenger, WhatsApp, SMS, Email)
-- **Multi-Channel Dispatch**: Send formatted booking confirmations directly to clients via:
-  - **WhatsApp**: Click-to-chat `https://wa.me/` link with pre-formatted message.
-  - **Facebook Messenger**: `https://m.me/` direct messaging link or client page handle.
-  - **SMS Text**: Native `sms:` URI launcher for phones and web SMS gateways.
-  - **Formatted Email & Clipboard Copy**: 1-click clipboard copy or `mailto:` trigger.
-- **Smart Contact Validation**: Automatically disables channels when contact information (phone, messenger handle) is missing, with clear warning notices and input hints.
-- **Dynamic Message Templates**:
-  - Auto-interpolates `{clientName}`, `{jobType}`, `{date}`, `{time}`, `{address}`, `{cleanerNames}`, `{duration}`, `{total}`, and special instructions or add-ons.
-  - Includes standard confirmation wording, e.g., *"Please reply YES to confirm or message us if you need to reschedule."*
-  - Pre-packaged templates: Standard Friendly, Formal Business, Short Reminder, and Date/Time Reschedule Notification.
-  - Custom templates can be authored, saved, and reused across sessions.
-- **Confirmation Status Tracking**:
-  - Live status tracking per job: `Not Sent / Unconfirmed`, `Confirmation Sent`, `Client Confirmed`, `Needs Reschedule`, and `Declined`.
-  - Manual status override dropdown for when clients confirm via phone or message.
-  - Comprehensive audit trail (`confirmationLogs`): logs timestamp, channel used, recipient, and staff member who sent it.
-- **Bulk Confirmation Dispatch**:
-  - Select multiple upcoming jobs from the Task List or click **"Confirm Tomorrow"** on the Dashboard to confirm all scheduled clients in one unified batch workflow.
-- **Privacy & Role Enforcement**:
-  - Confirmation status and logs are stored securely with client records and respect client preferred channels.
-
-### 9. Light & Dark Mode
-- Full support for both light and dark color schemes, with quick-toggle in the top header and persistent user preference.
+### 7. Staff Authentication & Role Security
+- **Pre-Configured Accounts**:
+  - `admin` / `buzzbee123` (Administrator / Operations Manager)
+  - `manager` / `buzzbee123` (Manager / Supervisor)
+- **Security Inactivity Auto-Logout**: Unattended sessions automatically expire after 30 minutes of inactivity. Active keystrokes or mouse movement automatically extend the session.
 
 ---
 
 ## Tech Stack
 
-- **Framework**: React 19 with TypeScript
-- **Bundler & Dev Server**: Vite
-- **Styling**: Tailwind CSS v4 (with custom `@custom-variant dark` support)
+- **Framework**: React 19 + TypeScript
+- **Bundler & Server**: Vite + Node.js (Dev server on port 3000)
+- **Database**: Google Cloud Firestore (provisioned database with real-time listeners and security rules)
+- **Styling**: Tailwind CSS v4
 - **Icons**: Lucide React
 - **Spreadsheets**: SheetJS (`xlsx`)
-- **Storage**: Local browser storage with persistent state management and session isolation
 
 ---
 
 ## Getting Started
 
-### Prerequisites
-
-- Node.js (version 18 or later recommended)
-- npm or bun
-
-### Installation
-
-1. Clone or open the project directory:
-   ```bash
-   cd dbuzzingbees
-   ```
-
-2. Install dependencies:
+1. Install dependencies:
    ```bash
    npm install
    ```
 
-3. Start the local development server:
+2. Start the development server:
    ```bash
    npm run dev
    ```
 
-4. Open your browser and navigate to `http://localhost:3000`.
+3. Open `http://localhost:3000` in your web browser.
 
-### Default Demo Credentials
-
-You can sign in using either of the built-in staff accounts:
-
-| Username | Password | Role |
-| :--- | :--- | :--- |
-| `admin` | `buzzbee123` | Administrator (Operations Manager) |
-| `manager` | `buzzbee123` | Manager |
-
-*You can create additional staff and user accounts anytime via the **Staff Users** modal in the top navigation bar.*
+4. Sign in with:
+   - Username: `admin`
+   - Password: `buzzbee123`
 
 ---
 
-## Project Structure
+## Production Readiness Verification
 
-```
-├── public/                 # Static assets and icons
-├── src/
-│   ├── components/         # React UI views and modals
-│   │   ├── BeeLogo.tsx              # Brand logo component
-│   │   ├── CalendarView.tsx         # Month/Week/Day cleaning calendar
-│   │   ├── CleanerManagementView.tsx # Cleaner roster & pay rates
-│   │   ├── DashboardView.tsx        # High-level metrics & urgent schedule
-│   │   ├── ImportExportModal.tsx    # Excel (.xlsx) file import & export
-│   │   ├── LoginPage.tsx            # Staff authentication & login
-│   │   ├── Navbar.tsx               # Header, session timer, navigation
-│   │   ├── PayAndInvoiceView.tsx    # Weekly/monthly wage & invoice breakdown
-│   │   ├── StaffUsersModal.tsx      # Staff user creation & administration
-│   │   ├── TaskListView.tsx         # Task data table & search/filter
-│   │   └── TaskModal.tsx            # Add/Edit task modal
-│   ├── data/               # Seed data and defaults
-│   ├── services/
-│   │   ├── excelService.ts # Excel export & import parser
-│   │   └── storage.ts      # LocalStorage & session management
-│   ├── types/              # TypeScript interface definitions
-│   ├── utils/              # Date formatters & recurring recurrence logic
-│   ├── App.tsx             # Root application orchestrator
-│   ├── index.css           # Tailwind CSS imports & theme definitions
-│   └── main.tsx            # React application entry point
-├── package.json            # Project dependencies and npm scripts
-├── tsconfig.json           # TypeScript configuration
-└── vite.config.ts          # Vite build configuration
-```
-
----
-
-## Available Scripts
-
-- `npm run dev` — Starts the Vite dev server on `http://0.0.0.0:3000`.
-- `npm run build` — Bundles the production application to the `/dist` directory.
-- `npm run preview` — Locally preview the production build.
-- `npm run lint` — Validates TypeScript types across the codebase with `tsc --noEmit`.
-
----
-
-## License
-
-Private and proprietary. Built for DBuzzingBees Cleaning Operations.
+- ✅ Cloud Firestore persistent database deployed and connected
+- ✅ 3-Month recurring scheduling enforced
+- ✅ 20-item default pagination with 20/50/100 page size options
+- ✅ Date sorting (Newest to Oldest, Oldest to Newest)
+- ✅ Clean slate state: 0 initial test clients and 0 test cleaners for manual verification
+- ✅ WhatsApp, Messenger, SMS, and Email confirmations with iframe-safe dispatches
+- ✅ Real-time calculations across cleaner wages, client invoices, margins, and payment statuses

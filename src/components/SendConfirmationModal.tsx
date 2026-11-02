@@ -21,7 +21,8 @@ import {
   RefreshCw,
   Edit3,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Mail
 } from 'lucide-react';
 import { Task, Cleaner, UserSession, ConfirmationChannel, ConfirmationStatus, ConfirmationLog, CompanySettings } from '../types';
 import { 
@@ -29,6 +30,7 @@ import {
   buildWhatsAppLink, 
   buildMessengerLink, 
   buildSmsLink, 
+  buildEmailLink,
   checkChannelAvailability,
   canSendConfirmation,
   getConfirmationStatusMeta,
@@ -71,6 +73,7 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
     whatsapp: true,
     messenger: false,
     sms: false,
+    email: false,
   });
 
   // Message body state (customizable live before sending)
@@ -79,15 +82,17 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
   const [showTemplateSettings, setShowTemplateSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
+  const [channelError, setChannelError] = useState<string | null>(null);
 
   // Manual status update state
   const [manualStatus, setManualStatus] = useState<ConfirmationStatus>('not_sent');
   const [statusNotes, setStatusNotes] = useState('');
   const [statusUpdateSuccess, setStatusUpdateSuccess] = useState(false);
 
-  // Quick edit for missing phone/messenger on active task
+  // Quick edit for missing phone/messenger/email on active task
   const [tempPhone, setTempPhone] = useState('');
   const [tempMessenger, setTempMessenger] = useState('');
+  const [tempEmail, setTempEmail] = useState('');
   const [isEditingContact, setIsEditingContact] = useState(false);
 
   // Bulk selection checkboxes (ids of tasks to confirm)
@@ -103,6 +108,7 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
     const currentSettings = loadCompanySettings();
     setCompanySettings(currentSettings);
     setSendSuccessMessage(null);
+    setChannelError(null);
     setStatusUpdateSuccess(false);
 
     if (isBulk) {
@@ -115,6 +121,7 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
       setManualStatus(activeTask.confirmationStatus || 'not_sent');
       setTempPhone(activeTask.clientPhone || '');
       setTempMessenger(activeTask.clientMessenger || '');
+      setTempEmail(activeTask.clientEmail || '');
       
       const generated = generateConfirmationMessage(activeTask, cleaners, currentSettings);
       setMessageText(generated);
@@ -122,18 +129,22 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
       // Default channel preselection based on client preferredChannel or available contacts
       const hasPhone = Boolean(activeTask.clientPhone?.trim());
       const hasMessenger = Boolean(activeTask.clientMessenger?.trim());
+      const hasEmail = Boolean(activeTask.clientEmail?.trim());
 
       if (activeTask.clientPreferredChannel === 'whatsapp') {
-        setSelectedChannels({ whatsapp: hasPhone, messenger: false, sms: false });
+        setSelectedChannels({ whatsapp: hasPhone, messenger: false, sms: false, email: false });
       } else if (activeTask.clientPreferredChannel === 'sms') {
-        setSelectedChannels({ whatsapp: false, messenger: false, sms: hasPhone });
+        setSelectedChannels({ whatsapp: false, messenger: false, sms: hasPhone, email: false });
       } else if (activeTask.clientPreferredChannel === 'messenger') {
-        setSelectedChannels({ whatsapp: false, messenger: true, sms: false });
+        setSelectedChannels({ whatsapp: false, messenger: true, sms: false, email: false });
+      } else if (activeTask.clientPreferredChannel === 'email') {
+        setSelectedChannels({ whatsapp: false, messenger: false, sms: false, email: hasEmail });
       } else {
         setSelectedChannels({
           whatsapp: hasPhone,
           messenger: hasMessenger,
-          sms: !hasPhone ? false : false,
+          sms: false,
+          email: hasEmail,
         });
       }
     }
@@ -145,6 +156,7 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
   const waAvail = activeTask ? checkChannelAvailability('whatsapp', activeTask, companySettings) : { available: false, recipient: '' };
   const messengerAvail = activeTask ? checkChannelAvailability('messenger', activeTask, companySettings) : { available: false, recipient: '' };
   const smsAvail = activeTask ? checkChannelAvailability('sms', activeTask, companySettings) : { available: false, recipient: '' };
+  const emailAvail = activeTask ? checkChannelAvailability('email', activeTask, companySettings) : { available: false, recipient: '' };
 
   const handleCopyMessage = () => {
     navigator.clipboard.writeText(messageText);
@@ -177,14 +189,31 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
       ...activeTask,
       clientPhone: tempPhone.trim(),
       clientMessenger: tempMessenger.trim(),
+      clientEmail: tempEmail.trim(),
     };
     onUpdateTask(updated);
     setIsEditingContact(false);
   };
 
+  // Safe external dispatch trigger for iframe environments
+  const openDispatchLink = (url: string) => {
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (_) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   // Perform single send
   const handleSendSingle = (targetTask: Task) => {
     if (!isAuthorized) return;
+    setChannelError(null);
 
     const channelsToSend: ConfirmationChannel[] = [];
     if (selectedChannels.whatsapp && checkChannelAvailability('whatsapp', targetTask, companySettings).available) {
@@ -196,9 +225,12 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
     if (selectedChannels.sms && checkChannelAvailability('sms', targetTask, companySettings).available) {
       channelsToSend.push('sms');
     }
+    if (selectedChannels.email && checkChannelAvailability('email', targetTask, companySettings).available) {
+      channelsToSend.push('email');
+    }
 
     if (channelsToSend.length === 0) {
-      alert('Please select at least one available channel to send.');
+      setChannelError('Please select at least one available channel to send.');
       return;
     }
 
@@ -207,23 +239,28 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
 
     // Trigger dispatches
     channelsToSend.forEach((ch) => {
-      let url = '';
       let recipient = '';
 
       if (ch === 'whatsapp') {
         recipient = targetTask.clientPhone || '';
-        url = buildWhatsAppLink(recipient, messageText);
-        window.open(url, '_blank', 'noopener,noreferrer');
+        const url = buildWhatsAppLink(recipient, messageText);
+        openDispatchLink(url);
       } else if (ch === 'messenger') {
         recipient = targetTask.clientMessenger || companySettings.facebookPage;
-        url = buildMessengerLink(targetTask.clientMessenger, companySettings.facebookPage, messageText);
-        window.open(url, '_blank', 'noopener,noreferrer');
+        const url = buildMessengerLink(targetTask.clientMessenger, companySettings.facebookPage, messageText);
+        openDispatchLink(url);
       } else if (ch === 'sms') {
         recipient = targetTask.clientPhone || '';
-        url = buildSmsLink(recipient, messageText);
+        const url = buildSmsLink(recipient, messageText);
         // Fallback for SMS: copy to clipboard and open SMS URI
         navigator.clipboard.writeText(messageText);
-        window.location.href = url;
+        openDispatchLink(url);
+      } else if (ch === 'email') {
+        recipient = targetTask.clientEmail || '';
+        const subject = `Booking Confirmation - DBuzzingBees (${targetTask.date ? formatDate(targetTask.date) : 'Upcoming'})`;
+        const url = buildEmailLink(recipient, subject, messageText);
+        navigator.clipboard.writeText(messageText);
+        openDispatchLink(url);
       }
 
       newLogs.unshift({
@@ -255,6 +292,7 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
   // Perform bulk send
   const handleSendBulk = () => {
     if (!isAuthorized || selectedTaskIds.length === 0) return;
+    setChannelError(null);
 
     const targets = bulkTasks.filter((t) => selectedTaskIds.includes(t.id));
     const timestamp = new Date().toISOString();
@@ -270,7 +308,7 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
         primaryChannel = 'whatsapp';
         const url = buildWhatsAppLink(targetTask.clientPhone, taskMessage);
         if (openedTabs < 3) {
-          window.open(url, '_blank', 'noopener,noreferrer');
+          openDispatchLink(url);
           openedTabs++;
         }
         newLogs.unshift({
@@ -294,6 +332,18 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
           recipient: targetTask.clientPhone,
           messagePreview: taskMessage.substring(0, 120),
           notes: 'Dispatched via Bulk SMS'
+        });
+      } else if (selectedChannels.email && targetTask.clientEmail) {
+        primaryChannel = 'email';
+        newLogs.unshift({
+          id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          timestamp,
+          channel: 'email',
+          staffName: currentUser?.name || 'Staff User',
+          status: 'sent',
+          recipient: targetTask.clientEmail,
+          messagePreview: taskMessage.substring(0, 120),
+          notes: 'Dispatched via Bulk Email'
         });
       }
 
@@ -472,7 +522,7 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
                   <span className="text-xs font-bold text-neutral-900 dark:text-white block">
                     Update Client Communication Contacts
                   </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="text-[11px] font-bold text-neutral-500 uppercase">Mobile / Phone (WhatsApp & SMS)</label>
                       <input
@@ -490,6 +540,16 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
                         value={tempMessenger}
                         onChange={(e) => setTempMessenger(e.target.value)}
                         placeholder="e.g. sarah.smith or m.me/..."
+                        className="w-full mt-1 px-3 py-1.5 text-xs rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-neutral-500 uppercase">Client Email Address</label>
+                      <input
+                        type="email"
+                        value={tempEmail}
+                        onChange={(e) => setTempEmail(e.target.value)}
+                        placeholder="e.g. client@example.com"
                         className="w-full mt-1 px-3 py-1.5 text-xs rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
@@ -617,7 +677,7 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* WhatsApp Card */}
               <label 
                 className={`relative p-3.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all ${
@@ -782,7 +842,72 @@ export const SendConfirmationModal: React.FC<SendConfirmationModalProps> = ({
                   )}
                 </div>
               </label>
+
+              {/* Email Card */}
+              <label 
+                className={`relative p-3.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all ${
+                  selectedChannels.email
+                    ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 ring-1 ring-amber-500'
+                    : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800/40 hover:border-neutral-300'
+                } ${!isBulk && !emailAvail.available ? 'opacity-60 cursor-not-allowed bg-neutral-100 dark:bg-neutral-800/20' : ''}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-neutral-900 dark:text-white flex items-center gap-1.5">
+                        <span>Email</span>
+                        {activeTask?.clientPreferredChannel === 'email' && (
+                          <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 px-1.5 py-0.2 rounded font-bold">
+                            Preferred
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                        Direct mailto: Link
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={selectedChannels.email}
+                    disabled={!isBulk && !emailAvail.available}
+                    onChange={(e) => {
+                      setChannelError(null);
+                      setSelectedChannels({ ...selectedChannels, email: e.target.checked });
+                    }}
+                    className="h-4 w-4 rounded text-amber-600 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-neutral-100 dark:border-neutral-700/60 text-xs">
+                  {!isBulk ? (
+                    emailAvail.available ? (
+                      <span className="text-amber-700 dark:text-amber-400 font-mono text-[11px] flex items-center gap-1 truncate" title={emailAvail.recipient}>
+                        <Check className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{emailAvail.recipient}</span>
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400 text-[11px] flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                        <span>{emailAvail.reason || 'No email saved'}</span>
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-neutral-500 text-[11px]">Direct client email link</span>
+                  )}
+                </div>
+              </label>
             </div>
+
+            {channelError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center gap-2 text-rose-700 dark:text-rose-300 text-xs font-semibold">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{channelError}</span>
+              </div>
+            )}
           </div>
 
           {/* Message Preview & Live Editor */}

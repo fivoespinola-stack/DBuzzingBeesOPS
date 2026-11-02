@@ -15,7 +15,7 @@ import {
   Send
 } from 'lucide-react';
 import { Task, Cleaner } from '../types';
-import { formatTime12h, formatCurrency, formatDateLong, formatFrequency, isRecurringFrequency, isWeekend } from '../utils/formatters';
+import { formatTime12h, formatCurrency, formatDateLong, formatFrequency, isRecurringFrequency, isWeekend, formatYMD, toLocalDateString } from '../utils/formatters';
 import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
 
 interface CalendarViewProps {
@@ -38,9 +38,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onBulkSendConfirmation,
 }) => {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [selectedDateStr, setSelectedDateStr] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(toLocalDateString());
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
 
   const getCleanerName = (id: string) => cleaners.find((c) => c.id === id)?.name || id;
@@ -60,7 +58,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const handleToday = () => {
     const today = new Date();
     setCurrentDate(today);
-    setSelectedDateStr(today.toISOString().split('T')[0]);
+    setSelectedDateStr(toLocalDateString(today));
   };
 
   // Month Grid Calculation
@@ -73,13 +71,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   // Days from previous month to fill the first row
   const prevMonthLastDay = new Date(year, month, 0).getDate();
+  const prevYear = month === 0 ? year - 1 : year;
+  const prevMonth = month === 0 ? 11 : month - 1;
   const prevMonthDays: { dayNum: number; dateStr: string; isCurrentMonth: boolean }[] = [];
   for (let i = startDayOfWeek - 1; i >= 0; i--) {
     const d = prevMonthLastDay - i;
-    const prevDate = new Date(year, month - 1, d);
     prevMonthDays.push({
       dayNum: d,
-      dateStr: prevDate.toISOString().split('T')[0],
+      dateStr: formatYMD(prevYear, prevMonth, d),
       isCurrentMonth: false,
     });
   }
@@ -87,10 +86,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // Days of current month
   const currentMonthDays: { dayNum: number; dateStr: string; isCurrentMonth: boolean }[] = [];
   for (let d = 1; d <= daysInMonth; d++) {
-    const dt = new Date(year, month, d);
     currentMonthDays.push({
       dayNum: d,
-      dateStr: dt.toISOString().split('T')[0],
+      dateStr: formatYMD(year, month, d),
       isCurrentMonth: true,
     });
   }
@@ -98,12 +96,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // Days from next month to complete the 35 or 42 grid slots
   const totalDaysSoFar = prevMonthDays.length + currentMonthDays.length;
   const nextMonthDaysCount = totalDaysSoFar > 35 ? 42 - totalDaysSoFar : 35 - totalDaysSoFar;
+  const nextYear = month === 11 ? year + 1 : year;
+  const nextMonth = month === 11 ? 0 : month + 1;
   const nextMonthDays: { dayNum: number; dateStr: string; isCurrentMonth: boolean }[] = [];
   for (let d = 1; d <= nextMonthDaysCount; d++) {
-    const dt = new Date(year, month + 1, d);
     nextMonthDays.push({
       dayNum: d,
-      dateStr: dt.toISOString().split('T')[0],
+      dateStr: formatYMD(nextYear, nextMonth, d),
       isCurrentMonth: false,
     });
   }
@@ -122,7 +121,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   // Selected Day's tasks
   const selectedDayTasks = tasksByDate[selectedDateStr] || [];
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = toLocalDateString();
 
   const monthName = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 

@@ -25,8 +25,16 @@ import {
   loadTheme,
   saveTheme,
   INITIAL_CLEANERS,
-  getInitialTasks
+  getInitialTasks,
+  clearAllProductionRecords
 } from './services/storage';
+import { 
+  subscribeToTasks, 
+  subscribeToCleaners, 
+  deleteTaskFromFirestore, 
+  deleteCleanerFromFirestore,
+  testFirestoreConnection
+} from './services/firebase';
 import { exportAllDataToExcel } from './services/excelService';
 import { formatDate } from './utils/formatters';
 
@@ -138,6 +146,41 @@ export default function App() {
     };
   }, [session]);
 
+  // Real-time Cloud Firestore Data Synchronization
+  useEffect(() => {
+    if (!session) return;
+
+    // Verify connection to Cloud Firestore
+    testFirestoreConnection().catch((err) => {
+      console.warn('Firestore connection check notice:', err);
+    });
+
+    // Real-time synchronization for Tasks
+    const unsubTasks = subscribeToTasks((remoteTasks) => {
+      if (remoteTasks && remoteTasks.length > 0) {
+        setTasks(remoteTasks);
+        try {
+          localStorage.setItem('dbuzzingbees_tasks_prod_v1', JSON.stringify(remoteTasks));
+        } catch (_) {}
+      }
+    });
+
+    // Real-time synchronization for Cleaners
+    const unsubCleaners = subscribeToCleaners((remoteCleaners) => {
+      if (remoteCleaners && remoteCleaners.length > 0) {
+        setCleaners(remoteCleaners);
+        try {
+          localStorage.setItem('dbuzzingbees_cleaners_prod_v1', JSON.stringify(remoteCleaners));
+        } catch (_) {}
+      }
+    });
+
+    return () => {
+      unsubTasks();
+      unsubCleaners();
+    };
+  }, [session?.username]);
+
   const handleToggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
@@ -207,6 +250,9 @@ export default function App() {
       const updated = prev.filter((t) => t.id !== taskId);
       saveTasks(updated);
       return updated;
+    });
+    deleteTaskFromFirestore(taskId).catch((err) => {
+      console.warn('Firestore task deletion notice:', err);
     });
   };
 
@@ -282,6 +328,9 @@ export default function App() {
       saveCleaners(updated);
       return updated;
     });
+    deleteCleanerFromFirestore(cleanerId).catch((err) => {
+      console.warn('Firestore cleaner deletion notice:', err);
+    });
   };
 
   // Import / Export Operations
@@ -295,12 +344,10 @@ export default function App() {
     saveCleaners(updatedCleaners);
   };
 
-  const handleResetData = () => {
-    const initialTasks = getInitialTasks();
-    setTasks(initialTasks);
-    saveTasks(initialTasks);
-    setCleaners(INITIAL_CLEANERS);
-    saveCleaners(INITIAL_CLEANERS);
+  const handleResetData = async () => {
+    setTasks([]);
+    setCleaners([]);
+    await clearAllProductionRecords();
   };
 
   const handleExportFilteredTasks = (tasksToExport: Task[]) => {
@@ -500,7 +547,7 @@ export default function App() {
               </p>
               <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-800 dark:bg-neutral-100 text-[11px] font-semibold text-amber-400 dark:text-amber-700">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span>Repeats across 6 months through <strong>{formatDate(recurringToast.date)}</strong></span>
+                <span>Repeats across 3 months through <strong>{formatDate(recurringToast.date)}</strong></span>
               </div>
             </div>
           </div>

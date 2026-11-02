@@ -29,6 +29,83 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
 };
 
 /**
+ * Auto-formats Australian mobile numbers to international standard (+61 4XX XXX XXX)
+ * e.g. 0412 884 921 -> +61 412 884 921
+ *      0412884921   -> +61 412 884 921
+ *      412884921    -> +61 412 884 921
+ * Also formats dynamically as the user types or on paste/blur.
+ */
+export const formatAustralianPhoneNumber = (raw: string): string => {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  // If user cleared the input down to just "+", "+6", "+61", or "+61 ", allow clearing
+  if (trimmed === '+' || trimmed === '+6' || trimmed === '+61' || trimmed === '+61 ') {
+    return '';
+  }
+
+  // Extract all digits
+  let digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+
+  // If user only typed '6' or '61', and raw doesn't have more, clear
+  if (digits === '6' || digits === '61') {
+    return raw.startsWith('+') ? raw : '';
+  }
+
+  // If user entered numbers starting with 04...
+  if (digits.startsWith('04')) {
+    digits = '614' + digits.substring(2);
+  } else if (digits.startsWith('4') && digits.length <= 9) {
+    digits = '61' + digits;
+  } else if (digits.startsWith('0') && digits.length >= 10 && !digits.startsWith('04')) {
+    // Australian landlines (02, 03, 07, 08)
+    digits = '61' + digits.substring(1);
+  }
+
+  // If it starts with 614 (Australian mobile):
+  if (digits.startsWith('614')) {
+    const mobileDigits = digits.substring(2); // starts with 4
+    const p1 = mobileDigits.substring(0, 3); // 4XX
+    const p2 = mobileDigits.substring(3, 6); // XXX
+    const p3 = mobileDigits.substring(6, 9); // XXX
+    const extra = mobileDigits.substring(9); // extra digits if any
+
+    let res = '+61 ' + p1;
+    if (p2) res += ' ' + p2;
+    if (p3) res += ' ' + p3;
+    if (extra) res += extra;
+    return res;
+  }
+
+  // If it starts with 61 and another digit (e.g. landline 612, 613, etc.):
+  if (digits.startsWith('61') && digits.length > 2) {
+    const area = digits.substring(2, 3);
+    const p1 = digits.substring(3, 7);
+    const p2 = digits.substring(7, 11);
+    const extra = digits.substring(11);
+    let res = `+61 ${area}`;
+    if (p1) res += ` ${p1}`;
+    if (p2) res += ` ${p2}`;
+    if (extra) res += extra;
+    return res;
+  }
+
+  // If input started with '+' but is international:
+  if (raw.startsWith('+')) {
+    return raw;
+  }
+
+  // If 10 digits starting with 0 (standard national format):
+  if (digits.length === 10 && digits.startsWith('0')) {
+    return `+61 ${digits.substring(1, 4)} ${digits.substring(4, 7)} ${digits.substring(7)}`;
+  }
+
+  return raw;
+};
+
+/**
  * Normalizes phone numbers for WhatsApp wa.me links
  * Handles Australian mobile formatting (e.g. 0412 884 921 -> 61412884921)
  */
@@ -37,6 +114,8 @@ export const cleanPhoneNumberForWhatsApp = (rawPhone: string): string => {
   let digits = rawPhone.replace(/\D/g, '');
   if (digits.startsWith('0') && digits.length === 10) {
     digits = '61' + digits.substring(1);
+  } else if (digits.startsWith('4') && digits.length === 9) {
+    digits = '61' + digits;
   }
   return digits;
 };
@@ -126,6 +205,13 @@ export const buildSmsLink = (rawPhone: string, message: string): string => {
 };
 
 /**
+ * Generates email mailto: link with prefilled subject and body
+ */
+export const buildEmailLink = (email: string, subject: string, message: string): string => {
+  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
+};
+
+/**
  * Evaluates whether a channel is available for a given task
  */
 export const checkChannelAvailability = (
@@ -135,6 +221,7 @@ export const checkChannelAvailability = (
 ): { available: boolean; reason?: string; recipient: string } => {
   const phone = task.clientPhone?.trim();
   const messenger = task.clientMessenger?.trim();
+  const email = task.clientEmail?.trim();
   const fbPage = companySettings?.facebookPage?.trim() || DEFAULT_COMPANY_SETTINGS.facebookPage;
 
   if (channel === 'whatsapp') {
@@ -167,6 +254,16 @@ export const checkChannelAvailability = (
       };
     }
     return { available: false, reason: 'No Messenger username or company page configured', recipient: '' };
+  }
+
+  if (channel === 'email') {
+    if (!email) {
+      return { available: false, reason: 'No client email address saved', recipient: '' };
+    }
+    if (!email.includes('@')) {
+      return { available: false, reason: 'Invalid email address', recipient: email };
+    }
+    return { available: true, recipient: email };
   }
 
   return { available: false, reason: 'Unknown channel', recipient: '' };

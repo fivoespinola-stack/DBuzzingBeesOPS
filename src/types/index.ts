@@ -29,7 +29,7 @@ export type Frequency =
 
 export type ConfirmationStatus = 'not_sent' | 'sent' | 'confirmed' | 'needs_reschedule';
 
-export type ConfirmationChannel = 'whatsapp' | 'messenger' | 'sms';
+export type ConfirmationChannel = 'whatsapp' | 'messenger' | 'sms' | 'email';
 
 export interface ConfirmationLog {
   id: string;
@@ -52,7 +52,7 @@ export interface Task {
   clientPhone?: string;
   clientEmail?: string;
   clientMessenger?: string; // e.g. "sarah.smith" or Facebook profile/page link
-  clientPreferredChannel?: 'whatsapp' | 'messenger' | 'sms' | 'any';
+  clientPreferredChannel?: 'whatsapp' | 'messenger' | 'sms' | 'email' | 'any';
   fixHour: number; // e.g. 3.5 hrs
   rate: number; // charge rate e.g. $45/hr or fixed $160
   payType: PayType; // Hourly or Fixed Price

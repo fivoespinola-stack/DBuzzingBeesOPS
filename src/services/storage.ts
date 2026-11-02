@@ -1,12 +1,23 @@
 import { Task, Cleaner, UserSession, CleanerWeeklyPaymentRecord, PaymentTerm, StaffUser, StaffRole, CompanySettings } from '../types';
-import { SPREADSHEET_CLEANERS, SPREADSHEET_TASKS, DATA_CORRECTIONS_LOG, DataCorrection } from '../data/spreadsheetData';
-import { isWeekend, adjustDateStringToWeekday } from '../utils/formatters';
+import { isWeekend, adjustDateStringToWeekday, toLocalDateString } from '../utils/formatters';
 import { DEFAULT_COMPANY_SETTINGS } from '../utils/confirmationHelpers';
 
-export { DATA_CORRECTIONS_LOG, type DataCorrection };
+import { 
+  fetchTasksFromFirestore, 
+  saveTaskToFirestore, 
+  saveTasksBatchToFirestore, 
+  deleteTaskFromFirestore, 
+  clearAllTasksInFirestore, 
+  fetchCleanersFromFirestore, 
+  saveCleanerToFirestore, 
+  deleteCleanerFromFirestore, 
+  clearAllCleanersInFirestore, 
+  saveSettingsToFirestore, 
+  saveStaffUserToFirestore 
+} from './firebase';
 
-const TASKS_STORAGE_KEY = 'dbuzzingbees_tasks_v3';
-const CLEANERS_STORAGE_KEY = 'dbuzzingbees_cleaners_v3';
+const TASKS_STORAGE_KEY = 'dbuzzingbees_tasks_prod_v1';
+const CLEANERS_STORAGE_KEY = 'dbuzzingbees_cleaners_prod_v1';
 const SESSION_STORAGE_KEY = 'dbuzzingbees_session_v1';
 const THEME_STORAGE_KEY = 'dbuzzingbees_theme_v1';
 const CLEANER_PAYMENTS_STORAGE_KEY = 'dbuzzingbees_cleaner_weekly_payments_v1';
@@ -20,17 +31,27 @@ export const DEFAULT_SESSION_DURATION_MS = 30 * 60 * 1000;
 export const getOffsetDate = (daysOffset: number): string => {
   const d = new Date();
   d.setDate(d.getDate() + daysOffset);
-  return d.toISOString().split('T')[0];
+  return toLocalDateString(d);
 };
 
-export const INITIAL_CLEANERS: Cleaner[] = SPREADSHEET_CLEANERS;
+// Clean slate: no demo / sample records by default
+export const INITIAL_CLEANERS: Cleaner[] = [];
 
-export const getInitialTasks = (): Task[] => SPREADSHEET_TASKS;
+export const getInitialTasks = (): Task[] => [];
 
-export const resetToSpreadsheetTasks = (): Task[] => {
-  saveTasks(SPREADSHEET_TASKS);
-  saveCleaners(SPREADSHEET_CLEANERS);
-  return SPREADSHEET_TASKS;
+// Clear all client and cleaner records for fresh manual testing
+export const clearAllProductionRecords = async (): Promise<void> => {
+  localStorage.removeItem(TASKS_STORAGE_KEY);
+  localStorage.removeItem(CLEANERS_STORAGE_KEY);
+  localStorage.removeItem(CLEANER_PAYMENTS_STORAGE_KEY);
+  try {
+    await Promise.all([
+      clearAllTasksInFirestore(),
+      clearAllCleanersInFirestore()
+    ]);
+  } catch (err) {
+    console.warn('Firestore clearing error:', err);
+  }
 };
 
 // Tasks Storage Operations
@@ -38,11 +59,10 @@ export const loadTasks = (): Task[] => {
   try {
     const raw = localStorage.getItem(TASKS_STORAGE_KEY);
     if (!raw) {
-      const initial = getInitialTasks();
-      saveTasks(initial);
-      return initial;
+      return [];
     }
     const parsed: Task[] = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
     return parsed.map((t: any) => {
       // 1. Restore Pay Type: must be 'Hourly' or 'Fixed Price'
       let restoredPayType = t.payType;
@@ -81,6 +101,7 @@ export const loadTasks = (): Task[] => {
       return {
         ...t,
         date: adjustedDate,
+        clientPhone: t.clientPhone || '',
         payType: restoredPayType,
         paymentTerm,
         isRecurring,
@@ -90,16 +111,19 @@ export const loadTasks = (): Task[] => {
       };
     });
   } catch (err) {
-    console.error('Failed to load tasks from localStorage', err);
-    return getInitialTasks();
+    console.error('Failed to load tasks from storage', err);
+    return [];
   }
 };
 
 export const saveTasks = (tasks: Task[]): void => {
   try {
     localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
+    saveTasksBatchToFirestore(tasks).catch((err) => {
+      console.warn('Firestore tasks sync notice:', err);
+    });
   } catch (err) {
-    console.error('Failed to save tasks to localStorage', err);
+    console.error('Failed to save tasks', err);
   }
 };
 
@@ -127,21 +151,28 @@ export const loadCleaners = (): Cleaner[] => {
   try {
     const raw = localStorage.getItem(CLEANERS_STORAGE_KEY);
     if (!raw) {
-      saveCleaners(INITIAL_CLEANERS);
-      return INITIAL_CLEANERS;
+      return [];
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((c: any) => ({
+      ...c,
+      phone: c.phone || '',
+    }));
   } catch (err) {
-    console.error('Failed to load cleaners from localStorage', err);
-    return INITIAL_CLEANERS;
+    console.error('Failed to load cleaners from storage', err);
+    return [];
   }
 };
 
 export const saveCleaners = (cleaners: Cleaner[]): void => {
   try {
     localStorage.setItem(CLEANERS_STORAGE_KEY, JSON.stringify(cleaners));
+    Promise.all(cleaners.map((c) => saveCleanerToFirestore(c))).catch((err) => {
+      console.warn('Firestore cleaner sync notice:', err);
+    });
   } catch (err) {
-    console.error('Failed to save cleaners to localStorage', err);
+    console.error('Failed to save cleaners', err);
   }
 };
 
@@ -154,7 +185,7 @@ export const INITIAL_STAFF_USERS: StaffUser[] = [
     password: 'buzzbee123',
     role: 'admin',
     email: 'sarah.jenkins@dbuzzingbees.com.au',
-    phone: '0412 884 921',
+    phone: '+61 412 884 921',
     status: 'active',
     createdAt: '2026-01-01T08:00:00.000Z',
   },
@@ -165,7 +196,7 @@ export const INITIAL_STAFF_USERS: StaffUser[] = [
     password: 'buzzbee123',
     role: 'manager',
     email: 'alex.rivera@dbuzzingbees.com.au',
-    phone: '0434 551 882',
+    phone: '+61 434 551 882',
     status: 'active',
     createdAt: '2026-03-15T09:00:00.000Z',
   },

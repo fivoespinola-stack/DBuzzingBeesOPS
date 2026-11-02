@@ -20,11 +20,13 @@ import {
   Repeat,
   Check,
   X,
-  Send
+  Send,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { Task, Cleaner, ConfirmationStatus } from '../types';
-import { DATA_CORRECTIONS_LOG } from '../data/spreadsheetData';
-import { formatCurrency, formatDate, formatTime12h, formatFrequency, isRecurringFrequency, isWeekend } from '../utils/formatters';
+import { formatCurrency, formatDate, formatTime12h, formatFrequency, isRecurringFrequency, isWeekend, toLocalDateString } from '../utils/formatters';
 import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
 
 interface TaskListViewProps {
@@ -62,14 +64,19 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'upcoming' | 'past'>('all');
   const [confirmationFilter, setConfirmationFilter] = useState<'all' | ConfirmationStatus>('all');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  
+  // Date Sorting: 'newest' (Newest to Oldest) | 'oldest' (Oldest to Newest)
+  const [dateSortOrder, setDateSortOrder] = useState<'newest' | 'oldest'>('newest');
+  // Pagination: 20 (default), 50, 100
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
-  const [showCorrectionsModal, setShowCorrectionsModal] = useState(false);
 
   const getCleanerName = (id: string) => cleaners.find((c) => c.id === id)?.name || id;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = toLocalDateString();
 
   // Distinct Job Types present in tasks
   const distinctJobTypes = useMemo(() => {
@@ -168,8 +175,27 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
       }
 
       return true;
-    }).sort((a, b) => b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime));
+    });
   }, [tasks, searchQuery, statusFilter, cleanerFilter, clientFilter, paymentTermFilter, frequencyFilter, jobTypeFilter, dateFilter, confirmationFilter, todayStr]);
+
+  // Sort tasks by Date: Newest to Oldest or Oldest to Newest
+  const sortedTasks = useMemo(() => {
+    return [...filteredTasks].sort((a, b) => {
+      const cmp = dateSortOrder === 'newest'
+        ? b.date.localeCompare(a.date)
+        : a.date.localeCompare(b.date);
+      if (cmp !== 0) return cmp;
+      return a.startTime.localeCompare(b.startTime);
+    });
+  }, [filteredTasks, dateSortOrder]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedTasks.length / pageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedTasks = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return sortedTasks.slice(start, start + pageSize);
+  }, [sortedTasks, safeCurrentPage, pageSize]);
 
   const resetFilters = () => {
     setSearchQuery('');
@@ -182,6 +208,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     setDateFilter('all');
     setConfirmationFilter('all');
     setSelectedTaskIds([]);
+    setDateSortOrder('newest');
+    setCurrentPage(1);
   };
 
   const hasActiveFilters =
@@ -209,15 +237,6 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={() => setShowCorrectionsModal(true)}
-            title="Review detected errors and fixes made to spreadsheet data"
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-900 dark:text-amber-200 transition-colors"
-          >
-            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <span>Data Fixes ({DATA_CORRECTIONS_LOG.length})</span>
-          </button>
-
           <button
             onClick={() => onExportTasks(filteredTasks)}
             title="Export currently filtered tasks to Excel (.xlsx)"
@@ -297,7 +316,26 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
         </div>
 
         {/* Secondary Filters Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 pt-1 text-xs">
+          {/* Date Sort Filter */}
+          <div>
+            <label className="block text-[10px] font-bold uppercase text-neutral-500 mb-1 flex items-center gap-1">
+              <span>Date Sort</span>
+              <ArrowUpDown className="w-2.5 h-2.5 text-amber-500" />
+            </label>
+            <select
+              value={dateSortOrder}
+              onChange={(e) => {
+                setDateSortOrder(e.target.value as 'newest' | 'oldest');
+                setCurrentPage(1);
+              }}
+              className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white font-semibold focus:outline-none focus:ring-1 focus:ring-[#FFB509]"
+            >
+              <option value="newest">Newest to Oldest</option>
+              <option value="oldest">Oldest to Newest</option>
+            </select>
+          </div>
+
           {/* Client Filter */}
           <div>
             <label className="block text-[10px] font-bold uppercase text-neutral-500 mb-1">Client</label>
@@ -477,17 +515,37 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                   <th className="py-3.5 px-3 xl:px-4 w-10 text-center">
                     <input
                       type="checkbox"
-                      checked={selectedTaskIds.length === filteredTasks.length && filteredTasks.length > 0}
+                      checked={paginatedTasks.length > 0 && paginatedTasks.every((t) => selectedTaskIds.includes(t.id))}
                       onChange={(e) => {
-                        if (e.target.checked) setSelectedTaskIds(filteredTasks.map((t) => t.id));
-                        else setSelectedTaskIds([]);
+                        if (e.target.checked) {
+                          const pageIds = paginatedTasks.map((t) => t.id);
+                          setSelectedTaskIds(Array.from(new Set([...selectedTaskIds, ...pageIds])));
+                        } else {
+                          const pageIds = new Set(paginatedTasks.map((t) => t.id));
+                          setSelectedTaskIds(selectedTaskIds.filter((id) => !pageIds.has(id)));
+                        }
                       }}
                       className="rounded text-[#FFB509] focus:ring-[#FFB509]"
-                      title="Select all visible for bulk actions"
+                      title="Select all on this page for bulk actions"
                     />
                   </th>
                   <th className="py-3.5 px-3 xl:px-4 w-12 text-center">Done</th>
-                  <th className="py-3.5 px-3 xl:px-4 whitespace-nowrap">Date & Time</th>
+                  <th 
+                    onClick={() => {
+                      setDateSortOrder((prev) => prev === 'newest' ? 'oldest' : 'newest');
+                      setCurrentPage(1);
+                    }}
+                    className="py-3.5 px-3 xl:px-4 whitespace-nowrap cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors select-none group"
+                    title={`Click to sort by date (${dateSortOrder === 'newest' ? 'currently Newest to Oldest' : 'currently Oldest to Newest'})`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Date & Time</span>
+                      <ArrowUpDown className={`w-3.5 h-3.5 ${dateSortOrder === 'newest' ? 'text-amber-500' : 'text-blue-500'}`} />
+                      <span className="text-[10px] font-mono font-normal text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200">
+                        {dateSortOrder === 'newest' ? '↓ Newest' : '↑ Oldest'}
+                      </span>
+                    </div>
+                  </th>
                   <th className="py-3.5 px-3 xl:px-4 min-w-[200px]">Client & Contact</th>
                   <th className="py-3.5 px-3 xl:px-4 whitespace-nowrap">Confirmation</th>
                   <th className="py-3.5 px-3 xl:px-4 min-w-[200px]">Job & Address</th>
@@ -502,7 +560,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {filteredTasks.map((task) => {
+                {paginatedTasks.map((task) => {
                   const cleanerNames = task.assignedCleanerIds.map(getCleanerName).join(', ');
                   return (
                     <tr
@@ -773,7 +831,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
 
           {/* Mobile Card View */}
           <div className="lg:hidden divide-y divide-neutral-200 dark:divide-neutral-800">
-            {filteredTasks.map((task) => {
+            {paginatedTasks.map((task) => {
               const cleanerNames = task.assignedCleanerIds.map(getCleanerName).join(', ');
               return (
                 <div key={task.id} className="p-4 space-y-3">
@@ -971,6 +1029,85 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
         </div>
       )}
 
+      {/* Pagination Controls */}
+      {sortedTasks.length > 0 && (
+        <div className="bg-white dark:bg-neutral-900 p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4 text-xs select-none">
+          {/* Left: Range count */}
+          <div className="text-neutral-500 dark:text-neutral-400">
+            Showing <strong className="text-neutral-900 dark:text-white font-mono font-bold">{(safeCurrentPage - 1) * pageSize + 1}</strong> to{' '}
+            <strong className="text-neutral-900 dark:text-white font-mono font-bold">
+              {Math.min(safeCurrentPage * pageSize, sortedTasks.length)}
+            </strong>{' '}
+            of <strong className="text-neutral-900 dark:text-white font-mono font-bold">{sortedTasks.length}</strong> schedules
+          </div>
+
+          {/* Middle: Page navigation buttons */}
+          <div className="flex items-center gap-1.5 flex-wrap justify-center">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={safeCurrentPage <= 1}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-700 font-semibold text-neutral-700 dark:text-neutral-300 transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Prev</span>
+            </button>
+
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, idx) => {
+                let pageNum = idx + 1;
+                if (totalPages > 5) {
+                  if (safeCurrentPage > 3 && safeCurrentPage < totalPages - 1) {
+                    pageNum = safeCurrentPage - 2 + idx;
+                  } else if (safeCurrentPage >= totalPages - 1) {
+                    pageNum = totalPages - 4 + idx;
+                  }
+                }
+                const isActive = pageNum === safeCurrentPage;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-8 h-8 rounded-xl font-mono font-bold text-xs transition-all ${
+                      isActive
+                        ? 'bg-[#FFB509] text-neutral-950 shadow-sm'
+                        : 'border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safeCurrentPage >= totalPages}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-700 font-semibold text-neutral-700 dark:text-neutral-300 transition-colors"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Right: Items per page selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-neutral-500">Show per page:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-white font-mono font-bold focus:outline-none focus:ring-1 focus:ring-[#FFB509]"
+            >
+              <option value={20}>20 per page</option>
+              <option value={50}>50 per page</option>
+              <option value={100}>100 per page</option>
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* Floating Bulk Action Bar */}
       {selectedTaskIds.length > 0 && (
         <aside
@@ -1037,68 +1174,6 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                 className="px-4 py-1.5 text-xs font-bold rounded-xl bg-red-600 hover:bg-red-700 text-white"
               >
                 Yes, Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Data Corrections Modal */}
-      {showCorrectionsModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-neutral-900 rounded-2xl max-w-2xl w-full p-6 border border-neutral-200 dark:border-neutral-800 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-neutral-900 dark:text-white">Spreadsheet Data Corrections</h3>
-                  <p className="text-xs text-neutral-500">Errors detected in the imported sheet and automatically repaired</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowCorrectionsModal(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="overflow-y-auto space-y-3 pr-1 flex-1 text-xs">
-              {DATA_CORRECTIONS_LOG.map((log, idx) => (
-                <div key={idx} className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/80 space-y-2">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="font-bold text-neutral-900 dark:text-white text-sm">
-                      {log.client}
-                    </span>
-                    <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-semibold">
-                      {log.field}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11.5px]">
-                    <div className="p-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-300">
-                      <span className="font-bold block text-[10px] uppercase text-red-500">Original in Sheet:</span>
-                      <code>{log.original}</code>
-                    </div>
-                    <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300">
-                      <span className="font-bold block text-[10px] uppercase text-emerald-500">Corrected Value:</span>
-                      <code>{log.corrected}</code>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-neutral-600 dark:text-neutral-400 italic">
-                    Reason: {log.reason}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="pt-3 border-t border-neutral-200 dark:border-neutral-800 flex justify-end shrink-0">
-              <button
-                onClick={() => setShowCorrectionsModal(false)}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-[#FFB509] text-neutral-950 hover:bg-[#EAA300] transition-colors"
-              >
-                Close Corrections
               </button>
             </div>
           </div>

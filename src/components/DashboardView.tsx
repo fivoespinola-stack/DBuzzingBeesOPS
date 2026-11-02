@@ -35,7 +35,8 @@ import {
   generateWeeklyDispatchText,
   generateSingleTaskDispatchText,
   formatFrequency,
-  isRecurringFrequency
+  isRecurringFrequency,
+  toLocalDateString
 } from '../utils/formatters';
 import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
 
@@ -105,7 +106,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     for (let i = 0; i < 7; i++) {
       const dt = new Date(mondayDate);
       dt.setDate(dt.getDate() + i);
-      dates.push(dt.toISOString().split('T')[0]);
+      dates.push(toLocalDateString(dt));
     }
     return dates;
   };

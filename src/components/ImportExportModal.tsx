@@ -380,28 +380,29 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 
               </div>
 
-              {/* Reset Database Section */}
-              <div className="pt-6 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
-                    Reset Demo Dataset
-                  </h4>
-                  <p className="text-[11px] text-neutral-500">
-                    Restores default demo cleaning tasks, two-week schedule, and cleaners.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    if (window.confirm('Reset all tasks and cleaners to initial demo data?')) {
+              {/* Production Database Clear & Reset Section */}
+              <div className="pt-6 border-t border-neutral-200 dark:border-neutral-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40">
+                  <div>
+                    <h4 className="text-xs font-bold text-red-900 dark:text-red-300 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                      <span>Clear All Client & Cleaner Records (Clean Slate)</span>
+                    </h4>
+                    <p className="text-[11px] text-neutral-600 dark:text-neutral-400 mt-0.5">
+                      Deletes all existing tasks, schedules, and cleaner profiles from the database so you can enter fresh production data. Settings and staff accounts remain intact.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
                       onResetData();
                       onClose();
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors"
-                >
-                  <RefreshCcw className="w-3.5 h-3.5" />
-                  <span>Reset Demo Data</span>
-                </button>
+                    }}
+                    className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors shadow-xs"
+                  >
+                    <RefreshCcw className="w-3.5 h-3.5" />
+                    <span>Clear All Data</span>
+                  </button>
+                </div>
               </div>
 
             </div>
