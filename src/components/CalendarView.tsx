@@ -17,6 +17,7 @@ import {
 import { Task, Cleaner } from '../types';
 import { formatTime12h, formatCurrency, formatDateLong, formatFrequency, isRecurringFrequency, isWeekend, formatYMD, toLocalDateString } from '../utils/formatters';
 import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
+import { SensitiveAccessMask } from './SensitiveAccessMask';
 
 interface CalendarViewProps {
   tasks: Task[];
@@ -27,6 +28,7 @@ interface CalendarViewProps {
   onSendConfirmation: (task: Task) => void;
   onBulkSendConfirmation?: (tasks: Task[]) => void;
   onApproveBooking?: (task: Task) => void;
+  userRole?: string;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -38,7 +40,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onSendConfirmation,
   onBulkSendConfirmation,
   onApproveBooking,
+  userRole = 'admin',
 }) => {
+  const isCleaner = userRole === 'cleaner';
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(toLocalDateString());
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
@@ -360,12 +364,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   Saturdays & Sundays are reserved for special tasks only. Client recurring tasks are scheduled Monday to Friday.
                 </p>
               )}
-              <button
-                onClick={() => onAddNewTask(selectedDateStr)}
-                className="mt-3 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#FFB509] text-neutral-950 hover:bg-[#EAA300] transition-colors"
-              >
-                {isWeekend(selectedDateStr) ? '+ Add Special Job for this Date' : '+ Add Job for this Date'}
-              </button>
+              {!isCleaner && (
+                <button
+                  onClick={() => onAddNewTask(selectedDateStr)}
+                  className="mt-3 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#FFB509] text-neutral-950 hover:bg-[#EAA300] transition-colors"
+                >
+                  {isWeekend(selectedDateStr) ? '+ Add Special Job for this Date' : '+ Add Job for this Date'}
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
@@ -444,6 +450,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       <span className="line-clamp-1">{task.address}</span>
                     </div>
 
+                    {task.remarks && (
+                      <div className="mt-1.5">
+                        <SensitiveAccessMask text={task.remarks} prefixLabel="Note" />
+                      </div>
+                    )}
+
                     <div className="mt-2 pt-2 border-t border-neutral-100 dark:border-neutral-700 flex items-center justify-between text-xs">
                       <div className="flex items-center gap-1 text-neutral-500 dark:text-neutral-400">
                         <Users className="w-3 h-3 text-[#FFB509]" />
@@ -461,17 +473,27 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           <Send className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                           <span>1-Click Confirm</span>
                         </button>
-                        <span className="font-mono-numbers font-bold text-neutral-900 dark:text-white">
-                          {task.payType === 'Fixed Price'
-                            ? formatCurrency(task.rate)
-                            : formatCurrency(task.rate * task.fixHour)}
-                        </span>
-                        <button
-                          onClick={() => onEditTask(task)}
-                          className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline"
-                        >
-                          Edit
-                        </button>
+
+                        {(userRole === 'staff' || isCleaner) ? (
+                          <span className="text-[11px] font-mono font-medium text-neutral-400 italic">
+                            Confidential
+                          </span>
+                        ) : (
+                          <span className="font-mono-numbers font-bold text-neutral-900 dark:text-white">
+                            {task.payType === 'Fixed Price'
+                              ? formatCurrency(task.rate)
+                              : formatCurrency(task.rate * task.fixHour)}
+                          </span>
+                        )}
+
+                        {!isCleaner && (
+                          <button
+                            onClick={() => onEditTask(task)}
+                            className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline"
+                          >
+                            Edit
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

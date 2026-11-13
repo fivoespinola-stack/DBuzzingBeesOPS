@@ -206,6 +206,17 @@ export const INITIAL_STAFF_USERS: StaffUser[] = [
     status: 'active',
     createdAt: '2026-03-15T09:00:00.000Z',
   },
+  {
+    id: 'user-cleaner',
+    username: 'cleaner',
+    name: 'Field Cleaner Portal',
+    password: 'buzzbee123',
+    role: 'cleaner',
+    email: 'cleaner@dbuzzingbees.com.au',
+    phone: '+61 400 000 000',
+    status: 'active',
+    createdAt: '2026-03-20T09:00:00.000Z',
+  },
 ];
 
 export const loadStaffUsers = (): StaffUser[] => {
@@ -285,6 +296,7 @@ export const createSession = (
     username: user ? user.username : username,
     name: user ? user.name : (username === 'admin' ? 'Sarah Jenkins (Ops Manager)' : username),
     role: user ? user.role : 'admin',
+    cleanerId: user?.cleanerId,
     loginTime: Date.now(),
     expiresAt: Date.now() + durationMs,
     rememberMe,

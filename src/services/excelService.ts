@@ -598,23 +598,60 @@ export const commitPreviewRowsToTasks = (
   return { newTasks, updatedCleaners: currentCleaners };
 };
 
-// JSON Export and Import
-export const exportBackupJSON = (tasks: Task[], cleaners: Cleaner[]) => {
-  const backup = {
-    version: '1.0',
+// JSON Full System Snapshot Export and Restore (Zero-Cost Disaster Recovery)
+export interface SystemSnapshot {
+  version: string;
+  app: string;
+  exportedAt: string;
+  cleaners: Cleaner[];
+  tasks: Task[];
+  companySettings?: any;
+}
+
+export const exportBackupJSON = (tasks: Task[], cleaners: Cleaner[], companySettings?: any) => {
+  const backup: SystemSnapshot = {
+    version: '2.0',
     app: 'DBuzzingBees',
     exportedAt: new Date().toISOString(),
     cleaners,
     tasks,
+    companySettings,
   };
 
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `DBuzzingBees_Backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.download = `DBuzzingBees_System_Snapshot_${new Date().toISOString().split('T')[0]}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+};
+
+export const parseBackupJSON = async (file: File): Promise<SystemSnapshot> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const parsed = JSON.parse(text);
+        if (!parsed || (!Array.isArray(parsed.tasks) && !Array.isArray(parsed.cleaners))) {
+          throw new Error('Invalid DBuzzingBees snapshot format. Expected tasks or cleaners array.');
+        }
+        resolve({
+          version: parsed.version || '1.0',
+          app: parsed.app || 'DBuzzingBees',
+          exportedAt: parsed.exportedAt || new Date().toISOString(),
+          cleaners: Array.isArray(parsed.cleaners) ? parsed.cleaners : [],
+          tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+          companySettings: parsed.companySettings,
+        });
+      } catch (err: any) {
+        reject(new Error(err.message || 'Failed to parse JSON snapshot file.'));
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read snapshot file.'));
+    reader.readAsText(file);
+  });
 };

@@ -30,6 +30,7 @@ import {
 import { Task, Cleaner, ConfirmationStatus } from '../types';
 import { formatCurrency, formatDate, formatTime12h, formatFrequency, isRecurringFrequency, isWeekend, toLocalDateString } from '../utils/formatters';
 import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
+import { SensitiveAccessMask } from './SensitiveAccessMask';
 
 interface TaskListViewProps {
   tasks: Task[];
@@ -45,6 +46,7 @@ interface TaskListViewProps {
   onApproveBooking?: (task: Task) => void;
   onRetryEmail?: (task: Task) => void;
   onOpenCustomizeConfirmation?: (task: Task) => void;
+  userRole?: string;
 }
 
 export const TaskListView: React.FC<TaskListViewProps> = ({
@@ -61,7 +63,9 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   onApproveBooking,
   onRetryEmail,
   onOpenCustomizeConfirmation,
+  userRole = 'admin',
 }) => {
+  const isCleaner = userRole === 'cleaner';
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [approvalFilter, setApprovalFilter] = useState<'all' | 'approved' | 'pending'>('all');
@@ -253,13 +257,15 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
             <span>Export ({filteredTasks.length})</span>
           </button>
 
-          <button
-            onClick={onAddNewTask}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-[#FFB509] hover:bg-[#EAA300] text-neutral-950 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FFB509]"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Task</span>
-          </button>
+          {!isCleaner && (
+            <button
+              onClick={onAddNewTask}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-[#FFB509] hover:bg-[#EAA300] text-neutral-950 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FFB509]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Task</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -852,8 +858,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                           <span className="break-words">{task.address}</span>
                         </div>
                         {task.remarks && (
-                          <div className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-1 bg-neutral-100 dark:bg-neutral-800/80 px-2 py-0.5 rounded-md inline-block max-w-full" title={task.remarks}>
-                            Note: {task.remarks}
+                          <div className="mt-1">
+                            <SensitiveAccessMask text={task.remarks} prefixLabel="Note" />
                           </div>
                         )}
                       </td>
@@ -863,16 +869,25 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                         {task.fixHour.toFixed(1)} h
                       </td>
 
-                      {/* Client Rate */}
+                      {/* Client Rate & Total (Confidential to Cleaner Staff) */}
                       <td className="py-3 px-3 xl:px-4 text-right font-mono-numbers whitespace-nowrap">
-                        <div className="font-bold text-neutral-900 dark:text-white">
-                          {task.payType === 'Fixed Price'
-                            ? formatCurrency(task.rate)
-                            : formatCurrency(task.rate * (task.fixHour || 1))}
-                        </div>
-                        <div className="text-[10px] text-neutral-400">
-                          {task.payType === 'Fixed Price' ? 'Flat' : `$${task.rate}/h`}
-                        </div>
+                        {(userRole === 'staff' || isCleaner) ? (
+                          <div className="text-right">
+                            <span className="text-[11px] font-medium text-neutral-400 italic">Confidential</span>
+                            <div className="text-[9.5px] text-neutral-400">Staff View Only</div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="font-bold text-neutral-900 dark:text-white">
+                              {task.payType === 'Fixed Price'
+                                ? formatCurrency(task.rate)
+                                : formatCurrency(task.rate * (task.fixHour || 1))}
+                            </div>
+                            <div className="text-[10px] text-neutral-400">
+                              {task.payType === 'Fixed Price' ? 'Flat' : `$${task.rate}/h`}
+                            </div>
+                          </>
+                        )}
                       </td>
 
                       {/* Pay Type (Hourly Rate vs Fixed Price) */}
@@ -930,27 +945,31 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                           >
                             <Send className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                           </button>
-                          <button
-                            onClick={() => onDuplicateTask(task)}
-                            title="Duplicate task"
-                            className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onEditTask(task)}
-                            title="Edit task"
-                            className="p-1.5 text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setTaskToDelete(task)}
-                            title="Delete task"
-                            className="p-1.5 text-neutral-400 hover:text-red-600 dark:hover:text-red-400 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {!isCleaner && (
+                            <>
+                              <button
+                                onClick={() => onDuplicateTask(task)}
+                                title="Duplicate task"
+                                className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => onEditTask(task)}
+                                title="Edit task"
+                                className="p-1.5 text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setTaskToDelete(task)}
+                                title="Delete task"
+                                className="p-1.5 text-neutral-400 hover:text-red-600 dark:hover:text-red-400 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1097,8 +1116,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       <span>{task.address}</span>
                     </div>
                     {task.remarks && (
-                      <div className="text-[11px] text-neutral-500 dark:text-neutral-400 italic pt-0.5 border-t border-neutral-200/40 dark:border-neutral-700/40">
-                        Notes: {task.remarks}
+                      <div className="pt-1 border-t border-neutral-200/40 dark:border-neutral-700/40">
+                        <SensitiveAccessMask text={task.remarks} prefixLabel="Note" />
                       </div>
                     )}
                   </div>
@@ -1110,14 +1129,25 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       <div className="text-[11px] text-neutral-500">Freq: {formatFrequency(task.frequency)}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-mono-numbers font-bold text-neutral-900 dark:text-white">
-                        {task.payType === 'Fixed Price'
-                          ? formatCurrency(task.rate)
-                          : formatCurrency(task.rate * (task.fixHour || 1))}
-                      </div>
-                      <div className="text-[10px] text-neutral-400 font-mono-numbers">
-                        {task.payType === 'Fixed Price' ? 'Flat rate' : `$${task.rate}/h`}
-                      </div>
+                      {(userRole === 'staff' || isCleaner) ? (
+                        <div className="text-right">
+                          <span className="text-[11px] font-medium text-neutral-400 italic">Confidential</span>
+                          <div className="text-[10px] text-neutral-400 font-mono-numbers">
+                            Duration: {task.fixHour}h
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="font-mono-numbers font-bold text-neutral-900 dark:text-white">
+                            {task.payType === 'Fixed Price'
+                              ? formatCurrency(task.rate)
+                              : formatCurrency(task.rate * (task.fixHour || 1))}
+                          </div>
+                          <div className="text-[10px] text-neutral-400 font-mono-numbers">
+                            {task.payType === 'Fixed Price' ? 'Flat rate' : `$${task.rate}/h`}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1169,26 +1199,28 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => onDuplicateTask(task)}
-                        className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
-                      >
-                        Duplicate
-                      </button>
-                      <button
-                        onClick={() => onEditTask(task)}
-                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => setTaskToDelete(task)}
-                        className="px-2 py-1 text-xs font-semibold rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    {!isCleaner && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => onDuplicateTask(task)}
+                          className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
+                        >
+                          Duplicate
+                        </button>
+                        <button
+                          onClick={() => onEditTask(task)}
+                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setTaskToDelete(task)}
+                          className="px-2 py-1 text-xs font-semibold rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

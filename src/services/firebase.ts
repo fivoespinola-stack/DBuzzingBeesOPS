@@ -58,6 +58,7 @@ export function subscribeToTasks(
       snapshot.forEach((d) => {
         items.push({ id: d.id, ...d.data() } as Task);
       });
+      seedTaskChecksums(items);
       onData(items);
     },
     (err) => {
@@ -75,6 +76,7 @@ export async function fetchTasksFromFirestore(): Promise<Task[]> {
     snap.forEach((d) => {
       items.push({ id: d.id, ...d.data() } as Task);
     });
+    seedTaskChecksums(items);
     return items;
   } catch (err) {
     console.error('Error fetching tasks from Firestore:', err);
@@ -92,19 +94,48 @@ export async function saveTaskToFirestore(task: Task): Promise<void> {
   }
 }
 
-export async function saveTasksBatchToFirestore(tasks: Task[]): Promise<void> {
+// In-memory checksum cache to prevent redundant writes and keep usage strictly within Firestore free tier
+const taskChecksumCache = new Map<string, string>();
+
+export function getTaskChecksum(t: Task): string {
+  return `${t.id}|${t.date}|${t.startTime}|${t.endTime}|${t.completed}|${t.fixHour}|${t.rate}|${t.payType}|${t.paymentTerm}|${t.invoiceNumber || ''}|${t.isApproved || false}|${t.approvedBy || ''}|${t.confirmationStatus || ''}|${t.confirmationDeliveryStatus || ''}|${t.clientName || ''}|${t.clientEmail || ''}|${t.clientPhone || ''}|${t.clientMessenger || ''}|${t.address || ''}|${t.remarks || ''}|${t.specialInstructions || ''}|${(t.assignedCleanerIds || []).join(',')}`;
+}
+
+export function seedTaskChecksums(tasks: Task[]): void {
+  tasks.forEach((t) => {
+    taskChecksumCache.set(t.id, getTaskChecksum(t));
+  });
+}
+
+export async function saveTasksBatchToFirestore(tasks: Task[], forceAll: boolean = false): Promise<void> {
   if (tasks.length === 0) return;
+
+  // Filter only tasks that have genuinely changed or are new
+  const dirtyTasks = forceAll 
+    ? tasks 
+    : tasks.filter((t) => taskChecksumCache.get(t.id) !== getTaskChecksum(t));
+
+  if (dirtyTasks.length === 0) {
+    // 0 writes needed - saves Firestore write quota
+    return;
+  }
+
   try {
     // Process in batches of 450 (Firestore limit is 500)
     const chunkSize = 450;
-    for (let i = 0; i < tasks.length; i += chunkSize) {
-      const chunk = tasks.slice(i, i + chunkSize);
+    for (let i = 0; i < dirtyTasks.length; i += chunkSize) {
+      const chunk = dirtyTasks.slice(i, i + chunkSize);
       const batch = writeBatch(db);
       chunk.forEach((t) => {
         const ref = doc(db, TASKS_COLLECTION, t.id);
         batch.set(ref, JSON.parse(JSON.stringify(t)), { merge: true });
       });
       await batch.commit();
+
+      // Update cache after successful write
+      chunk.forEach((t) => {
+        taskChecksumCache.set(t.id, getTaskChecksum(t));
+      });
     }
   } catch (err) {
     console.error('Error batch saving tasks to Firestore:', err);

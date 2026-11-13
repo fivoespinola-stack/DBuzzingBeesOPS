@@ -16,13 +16,14 @@ import {
   EyeOff,
   Sparkles
 } from 'lucide-react';
-import { StaffUser, StaffRole, UserSession } from '../types';
+import { StaffUser, StaffRole, UserSession, Cleaner } from '../types';
 import { loadStaffUsers, saveStaffUsers } from '../services/storage';
 
 interface StaffUsersModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserSession | null;
+  cleaners?: Cleaner[];
   onUserListChange?: () => void;
 }
 
@@ -30,6 +31,7 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
   isOpen,
   onClose,
   currentUser,
+  cleaners = [],
   onUserListChange,
 }) => {
   const [users, setUsers] = useState<StaffUser[]>(() => loadStaffUsers());
@@ -41,6 +43,7 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<StaffRole>('manager');
+  const [cleanerId, setCleanerId] = useState<string>('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
@@ -55,6 +58,7 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
     setName('');
     setPassword('');
     setRole('manager');
+    setCleanerId('');
     setEmail('');
     setPhone('');
     setStatus('active');
@@ -70,6 +74,7 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
     setName(user.name);
     setPassword(user.password || '');
     setRole(user.role);
+    setCleanerId(user.cleanerId || '');
     setEmail(user.email || '');
     setPhone(user.phone || '');
     setStatus(user.status);
@@ -116,6 +121,7 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
             name: name.trim(),
             password: password.trim(),
             role,
+            cleanerId: role === 'cleaner' ? (cleanerId || undefined) : undefined,
             email: email.trim(),
             phone: phone.trim(),
             status,
@@ -131,6 +137,7 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
         name: name.trim(),
         password: password.trim(),
         role,
+        cleanerId: role === 'cleaner' ? (cleanerId || undefined) : undefined,
         email: email.trim(),
         phone: phone.trim(),
         status,
@@ -189,6 +196,8 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
         return 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300 border-blue-200 dark:border-blue-800';
       case 'supervisor':
         return 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+      case 'cleaner':
+        return 'bg-teal-100 text-teal-800 dark:bg-teal-950/70 dark:text-teal-300 border-teal-200 dark:border-teal-800';
       case 'staff':
       default:
         return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
@@ -332,9 +341,33 @@ export const StaffUsersModal: React.FC<StaffUsersModalProps> = ({
                     <option value="manager">Manager (Operations & Payroll)</option>
                     <option value="supervisor">Supervisor (Schedules & Timesheets)</option>
                     <option value="staff">Staff (Job & Calendar Viewer)</option>
+                    <option value="cleaner">Field Cleaner (Assigned Jobs Only · No Billing Rates)</option>
                     <option value="admin">Administrator (Full Access)</option>
                   </select>
                 </div>
+
+                {role === 'cleaner' && (
+                  <div className="sm:col-span-2 p-3 rounded-xl bg-teal-50/70 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800/60">
+                    <label className="block font-bold uppercase tracking-wider text-teal-900 dark:text-teal-200 text-xs mb-1">
+                      Link to Cleaner Profile (Restricts jobs to this cleaner)
+                    </label>
+                    <select
+                      value={cleanerId}
+                      onChange={(e) => setCleanerId(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-xs font-medium"
+                    >
+                      <option value="">-- All assigned cleaner tasks (General field staff) --</option>
+                      {cleaners.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.phone || c.email || 'Active Cleaner'})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-teal-700 dark:text-teal-400 mt-1">
+                      Cleaners only see their own assigned work, job timings, client contacts, and instructions. Client billing rates, margins, and other cleaner wage slips are hidden.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300 mb-1">

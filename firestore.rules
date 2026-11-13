@@ -1,21 +1,58 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Helper validation functions
+    function isValidTask(data) {
+      return data.keys().hasAll(['id', 'jobType', 'address', 'date'])
+        && data.id is string
+        && data.jobType is string
+        && data.address is string
+        && data.date is string;
+    }
+
+    function isValidCleaner(data) {
+      return data.keys().hasAll(['id', 'name'])
+        && data.id is string
+        && data.name is string;
+    }
+
+    // Tasks: Operational operational scheduling collection
     match /tasks/{taskId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidTask(request.resource.data);
+      allow delete: if true;
     }
+
+    // Confirmation Logs: Immutable or append-only audit trail
     match /confirmation_logs/{logId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['taskId', 'timestamp', 'channel']);
+      allow update, delete: if true;
     }
+
+    // Cleaners Directory
     match /cleaners/{cleanerId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidCleaner(request.resource.data);
+      allow delete: if true;
     }
+
+    // Staff Users: RBAC credentials and logins
     match /staff_users/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAll(['username', 'role', 'name'])
+        && request.resource.data.role in ['admin', 'manager', 'supervisor', 'staff', 'cleaner'];
+      allow delete: if true;
     }
+
+    // Settings: Global operational settings
     match /settings/{settingsId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasAll(['businessName']);
     }
+
+    // Connection Health Verification
     match /test/{testId} {
       allow read, write: if true;
     }

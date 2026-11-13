@@ -27,7 +27,8 @@ import {
   INITIAL_CLEANERS,
   getInitialTasks,
   clearAllProductionRecords,
-  loadCompanySettings
+  loadCompanySettings,
+  saveCompanySettings
 } from './services/storage';
 import { 
   subscribeToTasks, 
@@ -37,7 +38,7 @@ import {
   deleteCleanerFromFirestore,
   testFirestoreConnection
 } from './services/firebase';
-import { exportAllDataToExcel } from './services/excelService';
+import { exportAllDataToExcel, SystemSnapshot } from './services/excelService';
 import { approveBookingAndAutoSend, retryEmailConfirmation, sendBookingConfirmation } from './services/emailConfirmationService';
 import { formatDate } from './utils/formatters';
 
@@ -523,6 +524,33 @@ export default function App() {
     await clearAllProductionRecords();
   };
 
+  const handleRestoreSnapshot = async (snapshot: SystemSnapshot) => {
+    try {
+      if (snapshot.tasks && snapshot.tasks.length > 0) {
+        setTasks(snapshot.tasks);
+        saveTasks(snapshot.tasks);
+      }
+      if (snapshot.cleaners && snapshot.cleaners.length > 0) {
+        setCleaners(snapshot.cleaners);
+        saveCleaners(snapshot.cleaners);
+      }
+      if (snapshot.companySettings) {
+        saveCompanySettings(snapshot.companySettings);
+      }
+      setActionToast({
+        type: 'success',
+        title: 'System Snapshot Restored',
+        message: `Successfully restored ${snapshot.tasks?.length || 0} tasks and ${snapshot.cleaners?.length || 0} cleaners!`,
+      });
+    } catch (err: any) {
+      setActionToast({
+        type: 'error',
+        title: 'Snapshot Restore Failed',
+        message: err.message || 'Failed to restore snapshot',
+      });
+    }
+  };
+
   const handleExportFilteredTasks = (tasksToExport: Task[]) => {
     exportAllDataToExcel(tasksToExport, cleaners);
   };
@@ -530,6 +558,21 @@ export default function App() {
   const handleExportAllPay = (summaries: CleanerPaySummary[], weekLabel: string) => {
     exportAllDataToExcel(tasks, cleaners, summaries);
   };
+
+  // Filter tasks for cleaner role (cleaner only sees their assigned tasks)
+  const displayedTasks = React.useMemo(() => {
+    if (session?.role === 'cleaner' && session?.cleanerId) {
+      return tasks.filter((t) => t.assignedCleanerIds.includes(session.cleanerId!));
+    }
+    return tasks;
+  }, [tasks, session?.role, session?.cleanerId]);
+
+  // Prevent cleaner access to Cleaners or Pay tabs
+  useEffect(() => {
+    if (session?.role === 'cleaner' && (currentTab === 'cleaners' || currentTab === 'pay')) {
+      setCurrentTab('dashboard');
+    }
+  }, [session?.role, currentTab]);
 
   // If user is not authenticated or session has expired, show Sign-in Page
   if (!session) {
@@ -543,7 +586,7 @@ export default function App() {
     );
   }
 
-  const pendingTasksCount = tasks.filter((t) => !t.completed).length;
+  const pendingTasksCount = displayedTasks.filter((t) => !t.completed).length;
 
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors flex flex-col font-sans">
@@ -567,7 +610,7 @@ export default function App() {
         
         {currentTab === 'dashboard' && (
           <DashboardView
-            tasks={tasks}
+            tasks={displayedTasks}
             cleaners={cleaners}
             onToggleComplete={handleToggleComplete}
             onEditTask={handleOpenEditTask}
@@ -576,12 +619,13 @@ export default function App() {
             onNavigateToTab={(tab) => setCurrentTab(tab)}
             onSendConfirmation={handleDirectSendConfirmation}
             onBulkSendConfirmation={handleDirectBulkSendConfirmation}
+            userRole={session.role}
           />
         )}
 
         {currentTab === 'tasks' && (
           <TaskListView
-            tasks={tasks}
+            tasks={displayedTasks}
             cleaners={cleaners}
             onToggleComplete={handleToggleComplete}
             onEditTask={handleOpenEditTask}
@@ -594,18 +638,20 @@ export default function App() {
             onApproveBooking={handleApproveBooking}
             onRetryEmail={handleRetryEmail}
             onOpenCustomizeConfirmation={handleOpenCustomizeModal}
+            userRole={session.role}
           />
         )}
 
         {currentTab === 'calendar' && (
           <CalendarView
-            tasks={tasks}
+            tasks={displayedTasks}
             cleaners={cleaners}
             onToggleComplete={handleToggleComplete}
             onEditTask={handleOpenEditTask}
             onAddNewTask={handleOpenAddNewTask}
             onSendConfirmation={handleDirectSendConfirmation}
             onBulkSendConfirmation={handleDirectBulkSendConfirmation}
+            userRole={session.role}
           />
         )}
 
@@ -624,6 +670,8 @@ export default function App() {
             tasks={tasks}
             cleaners={cleaners}
             onExportAllPay={handleExportAllPay}
+            userRole={session.role}
+            currentUserName={session.name}
           />
         )}
 
@@ -639,20 +687,24 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4">
             <span>Signed in as <strong className="text-neutral-800 dark:text-neutral-200">{session.name}</strong> ({session.role})</span>
-            <span>·</span>
-            <button
-              onClick={() => setStaffUsersModalOpen(true)}
-              className="hover:underline text-neutral-600 dark:text-neutral-300 flex items-center gap-1"
-            >
-              <span>Staff Users</span>
-            </button>
-            <span>·</span>
-            <button
-              onClick={() => setImportExportModalOpen(true)}
-              className="hover:underline text-amber-600 dark:text-amber-400"
-            >
-              Excel Backup
-            </button>
+            {session.role !== 'staff' && (
+              <>
+                <span>·</span>
+                <button
+                  onClick={() => setStaffUsersModalOpen(true)}
+                  className="hover:underline text-neutral-600 dark:text-neutral-300 flex items-center gap-1"
+                >
+                  <span>Staff Users</span>
+                </button>
+                <span>·</span>
+                <button
+                  onClick={() => setImportExportModalOpen(true)}
+                  className="hover:underline text-amber-600 dark:text-amber-400"
+                >
+                  System Snapshot & Excel
+                </button>
+              </>
+            )}
           </div>
         </div>
       </footer>
@@ -676,6 +728,9 @@ export default function App() {
         cleaners={cleaners}
         onImportComplete={handleImportComplete}
         onResetData={handleResetData}
+        onRestoreSnapshot={handleRestoreSnapshot}
+        companySettings={loadCompanySettings()}
+        userRole={session.role}
       />
 
       {/* Staff Users Management Modal */}
@@ -683,6 +738,7 @@ export default function App() {
         isOpen={staffUsersModalOpen}
         onClose={() => setStaffUsersModalOpen(false)}
         currentUser={session}
+        cleaners={cleaners}
       />
 
       {/* Send Confirmation Modal (WhatsApp, Messenger, SMS, Email, Clipboard) */}

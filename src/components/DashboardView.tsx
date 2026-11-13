@@ -40,6 +40,7 @@ import {
   toLocalDateString
 } from '../utils/formatters';
 import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
+import { SensitiveAccessMask } from './SensitiveAccessMask';
 
 interface DashboardViewProps {
   tasks: Task[];
@@ -51,6 +52,7 @@ interface DashboardViewProps {
   onNavigateToTab: (tab: string) => void;
   onSendConfirmation: (task: Task) => void;
   onBulkSendConfirmation?: (tasks: Task[]) => void;
+  userRole?: string;
 }
 
 interface DispatchModalState {
@@ -73,7 +75,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToTab,
   onSendConfirmation,
   onBulkSendConfirmation,
+  userRole,
 }) => {
+  const isCleaner = userRole === 'cleaner';
   const todayStr = getOffsetDate(0);
 
   // Today's jobs sorted by start time
@@ -374,9 +378,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span className="font-medium truncate">{task.address}</span>
             </div>
             {task.remarks ? (
-              <div className="mt-1 text-[11px] text-amber-900 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 px-2.5 py-1 rounded-md border border-amber-200/60 dark:border-amber-900/60 italic truncate">
-                Notes: {task.remarks}
-              </div>
+              <SensitiveAccessMask text={task.remarks} prefixLabel="Notes" className="mt-1 max-w-full" />
             ) : (
               <div className="mt-0.5 text-[11px] text-neutral-400 italic">
                 No special notes
@@ -592,26 +594,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => onAddNewTask(todayStr)}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-[#FFB509] hover:bg-[#EAA300] text-neutral-950 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FFB509]"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Task</span>
-          </button>
-          <button
-            onClick={onOpenImportExport}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-[#FFB509]" />
-            <span className="hidden sm:inline">Import/Export</span>
-          </button>
-        </div>
+        {!isCleaner && (
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => onAddNewTask(todayStr)}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-[#FFB509] hover:bg-[#EAA300] text-neutral-950 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FFB509]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Task</span>
+            </button>
+            <button
+              onClick={onOpenImportExport}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-[#FFB509]" />
+              <span className="hidden sm:inline">Import/Export</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* SECTION: PERFORMANCE DASHBOARD (MONTHLY RECURRING REVENUE & COMPLETED JOBS) */}
-      <PerformanceDashboard tasks={tasks} onNavigateToTab={onNavigateToTab} />
+      {/* SECTION: PERFORMANCE DASHBOARD (MONTHLY RECURRING REVENUE & COMPLETED JOBS) - Protected from Cleaner View */}
+      {!isCleaner && (
+        <PerformanceDashboard tasks={tasks} onNavigateToTab={onNavigateToTab} />
+      )}
 
       {/* Copy Toast Notification */}
       {copyFeedback && (

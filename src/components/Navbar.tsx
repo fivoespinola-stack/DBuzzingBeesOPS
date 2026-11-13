@@ -67,13 +67,20 @@ export const Navbar: React.FC<NavbarProps> = ({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const navItems = [
+  const isCleaner = session?.role === 'cleaner';
+
+  const allNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'tasks', label: 'Task List', icon: CheckSquare, badge: pendingTasksCount },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'cleaners', label: 'Cleaners', icon: Users },
     { id: 'pay', label: 'Pay & Invoicing', icon: DollarSign },
   ];
+
+  // Cleaners are restricted from Cleaners management and Pay & Invoicing tabs
+  const navItems = isCleaner
+    ? allNavItems.filter((i) => i.id !== 'cleaners' && i.id !== 'pay')
+    : allNavItems;
 
   const isLowTime = timeLeftSeconds > 0 && timeLeftSeconds <= 300; // <= 5 mins
 
@@ -96,10 +103,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                   DBuzzing<span className="text-[#FFB509]">Bees</span>
                 </span>
                 <span className="hidden sm:inline-block text-[11px] text-neutral-500 dark:text-neutral-400 ml-2 font-medium">
-                  Cleaning Ops
+                  {isCleaner ? 'Field Cleaner Portal' : 'Cleaning Ops'}
                 </span>
               </div>
             </button>
+            {isCleaner && (
+              <span className="hidden md:inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 dark:bg-teal-950/80 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                Staff Cleaner Mode
+              </span>
+            )}
           </div>
 
           {/* Desktop Navigation Links (Zone 2) */}
@@ -131,25 +143,29 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Actions & Session Control (Zone 3) */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {/* Import / Export Trigger */}
-            <button
-              onClick={onOpenImportExport}
-              title="Import or Export Tasks via Excel (.xlsx)"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-[#FFB509]" />
-              <span>Excel Import/Export</span>
-            </button>
+            {/* Import / Export Trigger - Admin / Manager Only */}
+            {!isCleaner && (
+              <button
+                onClick={onOpenImportExport}
+                title="Import or Export Tasks via Excel (.xlsx) / JSON Backup"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-[#FFB509]" />
+                <span>Backup & Excel</span>
+              </button>
+            )}
 
-            {/* Staff Users Trigger */}
-            <button
-              onClick={onOpenStaffUsers}
-              title="Manage Staff Users & System Access"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#FFB509]" />
-              <span>Staff Users</span>
-            </button>
+            {/* Staff Users Trigger - Admin / Manager Only */}
+            {!isCleaner && (
+              <button
+                onClick={onOpenStaffUsers}
+                title="Manage Staff Users & System Access"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-[#FFB509]" />
+                <span>Staff Access</span>
+              </button>
+            )}
 
             {/* Session Expiry Countdown Indicator (Automatic 30-minute inactivity logout) */}
             {session && (
@@ -250,27 +266,31 @@ export const Navbar: React.FC<NavbarProps> = ({
           })}
 
           <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800 flex flex-col gap-2">
-            <button
-              onClick={() => {
-                onOpenStaffUsers();
-                setMobileMenuOpen(false);
-              }}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
-            >
-              <ShieldCheck className="w-4 h-4 text-[#FFB509]" />
-              <span>Staff Users & Access</span>
-            </button>
+            {!isCleaner && (
+              <>
+                <button
+                  onClick={() => {
+                    onOpenStaffUsers();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
+                >
+                  <ShieldCheck className="w-4 h-4 text-[#FFB509]" />
+                  <span>Staff Users & Access</span>
+                </button>
 
-            <button
-              onClick={() => {
-                onOpenImportExport();
-                setMobileMenuOpen(false);
-              }}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-[#FFB509]" />
-              <span>Import & Export Excel (.xlsx)</span>
-            </button>
+                <button
+                  onClick={() => {
+                    onOpenImportExport();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-[#FFB509]" />
+                  <span>Import & Export Excel (.xlsx)</span>
+                </button>
+              </>
+            )}
 
             {session && (
               <div className="flex items-center justify-between px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800/60 rounded-lg">

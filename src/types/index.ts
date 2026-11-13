@@ -111,7 +111,7 @@ export interface Cleaner {
   notes?: string;
 }
 
-export type StaffRole = 'admin' | 'manager' | 'supervisor' | 'staff';
+export type StaffRole = 'admin' | 'manager' | 'supervisor' | 'staff' | 'cleaner';
 
 export interface StaffUser {
   id: string;
@@ -119,6 +119,7 @@ export interface StaffUser {
   name: string;
   password?: string;
   role: StaffRole;
+  cleanerId?: string; // Optional link to a specific Cleaner ID when role is cleaner
   email?: string;
   phone?: string;
   status: 'active' | 'inactive';
@@ -130,6 +131,7 @@ export interface UserSession {
   username: string;
   name: string;
   role: StaffRole | string;
+  cleanerId?: string;
   loginTime: number;
   expiresAt: number; // timestamp
   rememberMe: boolean;

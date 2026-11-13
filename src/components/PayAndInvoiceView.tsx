@@ -42,6 +42,8 @@ interface PayAndInvoiceViewProps {
   tasks: Task[];
   cleaners: Cleaner[];
   onExportAllPay: (summaries: CleanerPaySummary[], weekLabel: string) => void;
+  userRole?: string;
+  currentUserName?: string;
 }
 
 const MONTH_NAMES = [
@@ -58,6 +60,8 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
   tasks,
   cleaners,
   onExportAllPay,
+  userRole = 'admin',
+  currentUserName,
 }) => {
   // Period Mode: Weekly, Monthly, or Whole Year
   const [periodMode, setPeriodMode] = useState<PeriodMode>('weekly');
@@ -777,77 +781,145 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
         )}
       </div>
 
-      {/* Top Financial Summary KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Invoiced */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-              Total Client Invoiced
-            </span>
-            <DollarSign className="w-4 h-4 text-neutral-400" />
+      {/* Financial Summary KPI Cards (Role Protected) */}
+      {userRole === 'staff' ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Your Logged Hours
+              </span>
+              <Clock className="w-4 h-4 text-neutral-400" />
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
+              {totalHoursWorked.toFixed(1)} hrs
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              Active cleaning duration
+            </p>
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
-            {formatCurrency(totalInvoicedAll)}
-          </div>
-          <p className="mt-1 text-xs text-neutral-500">
-            {periodMode === 'weekly' && 'Weekly revenue from jobs'}
-            {periodMode === 'monthly' && `${selectedMonths.length} month(s) total revenue`}
-            {periodMode === 'yearly' && `Full Year ${selectedYear} revenue`}
-          </p>
-        </div>
 
-        {/* Total Cleaner Payout */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-              Total Cleaner Wages
-            </span>
-            <Users className="w-4 h-4 text-amber-500" />
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Completed Jobs
+              </span>
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
+              {cleanerPaySummaries.reduce((sum, s) => sum + s.taskCount, 0)}
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              Completed assignments
+            </p>
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-amber-600 dark:text-amber-400 font-mono-numbers">
-            {formatCurrency(totalPayout)}
-          </div>
-          <p className="mt-1 text-xs text-neutral-500">
-            Hourly wages + special allowances ({weeksCountInPeriod} wks)
-          </p>
-        </div>
 
-        {/* Gross Business Margin */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-              Gross Profit Margin
-            </span>
-            <TrendingUp className="w-4 h-4 text-emerald-500" />
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Your Earned Wages
+              </span>
+              <DollarSign className="w-4 h-4 text-amber-500" />
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-amber-600 dark:text-amber-400 font-mono-numbers">
+              {formatCurrency(totalPayout)}
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              Hourly wages + allowances
+            </p>
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono-numbers">
-            {formatCurrency(totalMarginAll)}
-          </div>
-          <p className="mt-1 text-xs text-neutral-500">
-            {marginPercent.toFixed(1)}% profit margin
-          </p>
-        </div>
 
-        {/* Hours Worked */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-              Total Hours Worked
-            </span>
-            <Clock className="w-4 h-4 text-neutral-400" />
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Payment Status
+              </span>
+              <CreditCard className="w-4 h-4 text-blue-500" />
+            </div>
+            <div className="mt-2 text-xl font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
+              {paidCleanersCount > 0 ? (
+                <span className="text-emerald-600 dark:text-emerald-400">Processed</span>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">Pending Pay</span>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              {periodLabel}
+            </p>
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
-            {totalHoursWorked.toFixed(1)} hrs
-          </div>
-          <p className="mt-1 text-xs text-neutral-500">
-            {cleanerPaySummaries.reduce((sum, s) => sum + s.taskCount, 0)} completed jobs
-          </p>
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Total Invoiced */}
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Total Client Invoiced
+              </span>
+              <DollarSign className="w-4 h-4 text-neutral-400" />
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
+              {formatCurrency(totalInvoicedAll)}
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              {periodMode === 'weekly' && 'Weekly revenue from jobs'}
+              {periodMode === 'monthly' && `${selectedMonths.length} month(s) total revenue`}
+              {periodMode === 'yearly' && `Full Year ${selectedYear} revenue`}
+            </p>
+          </div>
 
-      {/* Month-by-Month Financial Trend Table (Visible in Whole Year Mode or Multi-Month Mode) */}
-      {(periodMode === 'yearly' || (periodMode === 'monthly' && selectedMonths.length > 1)) && (
+          {/* Total Cleaner Payout */}
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Total Cleaner Wages
+              </span>
+              <Users className="w-4 h-4 text-amber-500" />
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-amber-600 dark:text-amber-400 font-mono-numbers">
+              {formatCurrency(totalPayout)}
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              Hourly wages + special allowances ({weeksCountInPeriod} wks)
+            </p>
+          </div>
+
+          {/* Gross Business Margin */}
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Gross Profit Margin
+              </span>
+              <TrendingUp className="w-4 h-4 text-emerald-500" />
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono-numbers">
+              {formatCurrency(totalMarginAll)}
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              {marginPercent.toFixed(1)}% profit margin
+            </p>
+          </div>
+
+          {/* Hours Worked */}
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Total Hours Worked
+              </span>
+              <Clock className="w-4 h-4 text-neutral-400" />
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-neutral-900 dark:text-white font-mono-numbers">
+              {totalHoursWorked.toFixed(1)} hrs
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              {cleanerPaySummaries.reduce((sum, s) => sum + s.taskCount, 0)} completed jobs
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Month-by-Month Financial Trend Table (Admin Only) */}
+      {userRole !== 'staff' && (periodMode === 'yearly' || (periodMode === 'monthly' && selectedMonths.length > 1)) && (
         <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-xs">
           <div className="px-5 py-3.5 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-neutral-50 dark:bg-neutral-800/40">
             <div className="flex items-center gap-2">

@@ -16,7 +16,9 @@ import {
   parseTasksFromExcel, 
   commitPreviewRowsToTasks, 
   exportAllDataToExcel, 
-  exportBackupJSON 
+  exportBackupJSON,
+  parseBackupJSON,
+  SystemSnapshot
 } from '../services/excelService';
 
 interface ImportExportModalProps {
@@ -26,6 +28,9 @@ interface ImportExportModalProps {
   cleaners: Cleaner[];
   onImportComplete: (newTasks: Task[], updatedCleaners: Cleaner[]) => void;
   onResetData: () => void;
+  onRestoreSnapshot?: (snapshot: SystemSnapshot) => void;
+  companySettings?: any;
+  userRole?: string;
 }
 
 export const ImportExportModal: React.FC<ImportExportModalProps> = ({
@@ -35,12 +40,20 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   cleaners,
   onImportComplete,
   onResetData,
+  onRestoreSnapshot,
+  companySettings,
+  userRole = 'admin',
 }) => {
-  const [activeTab, setActiveTab] = useState<'import' | 'export'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'export' | 'restore'>('import');
   const [previewRows, setPreviewRows] = useState<ImportPreviewRow[] | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
+
+  // Snapshot Restore state
+  const [snapshotPreview, setSnapshotPreview] = useState<SystemSnapshot | null>(null);
+  const [snapshotFileName, setSnapshotFileName] = useState<string | null>(null);
+  const [isRestoringSnapshot, setIsRestoringSnapshot] = useState(false);
 
   if (!isOpen) return null;
 
@@ -69,6 +82,45 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     setImportSuccessMessage(`Successfully imported ${newTasks.length} tasks!`);
     setPreviewRows(null);
   };
+
+  const handleSnapshotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsParsing(true);
+    setParseError(null);
+    setImportSuccessMessage(null);
+    setSnapshotFileName(file.name);
+
+    try {
+      const snapshot = await parseBackupJSON(file);
+      setSnapshotPreview(snapshot);
+    } catch (err: any) {
+      setParseError(err.message || 'Failed to read JSON snapshot.');
+      setSnapshotPreview(null);
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  const handleConfirmRestoreSnapshot = () => {
+    if (!snapshotPreview) return;
+    setIsRestoringSnapshot(true);
+    try {
+      onRestoreSnapshot?.(snapshotPreview);
+      setImportSuccessMessage(
+        `Snapshot restored successfully! Restored ${snapshotPreview.tasks.length} tasks and ${snapshotPreview.cleaners.length} cleaners.`
+      );
+      setSnapshotPreview(null);
+      setSnapshotFileName(null);
+    } catch (err: any) {
+      setParseError(err.message || 'Failed to restore snapshot');
+    } finally {
+      setIsRestoringSnapshot(false);
+    }
+  };
+
+  const isAdmin = userRole === 'admin' || userRole === 'manager';
 
   const validRowCount = previewRows?.filter((r) => r.isValid).length || 0;
   const errorRowCount = (previewRows?.length || 0) - validRowCount;
@@ -104,33 +156,46 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
           </button>
         </div>
 
-        {/* Tabs: Import vs Export */}
-        <div className="flex border-b border-neutral-200 dark:border-neutral-800 px-6 pt-2 bg-neutral-50/40 dark:bg-neutral-800/20">
+        {/* Tabs: Import vs Export vs Snapshot Restore */}
+        <div className="flex border-b border-neutral-200 dark:border-neutral-800 px-6 pt-2 bg-neutral-50/40 dark:bg-neutral-800/20 overflow-x-auto">
           <button
             onClick={() => {
               setActiveTab('import');
               setImportSuccessMessage(null);
             }}
-            className={`pb-3 px-4 text-xs font-bold border-b-2 transition-colors ${
+            className={`pb-3 px-4 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
               activeTab === 'import'
                 ? 'border-[#FFB509] text-neutral-900 dark:text-white'
-                : 'border-transparent text-neutral-500 hover:text-neutral-900'
+                : 'border-transparent text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200'
             }`}
           >
-            Import Tasks from Excel (.xlsx)
+            Import Excel (.xlsx)
           </button>
           <button
             onClick={() => {
               setActiveTab('export');
               setImportSuccessMessage(null);
             }}
-            className={`pb-3 px-4 text-xs font-bold border-b-2 transition-colors ${
+            className={`pb-3 px-4 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
               activeTab === 'export'
                 ? 'border-[#FFB509] text-neutral-900 dark:text-white'
-                : 'border-transparent text-neutral-500 hover:text-neutral-900'
+                : 'border-transparent text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200'
             }`}
           >
-            Export App Data (.xlsx / .json)
+            Export & Backup (.xlsx / .json)
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('restore');
+              setImportSuccessMessage(null);
+            }}
+            className={`pb-3 px-4 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
+              activeTab === 'restore'
+                ? 'border-[#FFB509] text-neutral-900 dark:text-white'
+                : 'border-transparent text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200'
+            }`}
+          >
+            1-Click Restore Snapshot (.json)
           </button>
         </div>
 
@@ -358,29 +423,29 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   </button>
                 </div>
 
-                {/* JSON Backup Export */}
+                {/* JSON Full System Snapshot Export */}
                 <div className="p-5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800/50 space-y-3">
                   <div className="flex items-center gap-2">
                     <FileText className="w-5 h-5 text-blue-500" />
                     <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
-                      JSON Database Backup (.json)
+                      System Snapshot Backup (.json)
                     </h3>
                   </div>
                   <p className="text-xs text-neutral-500">
-                    Full raw JSON snapshot of your tasks, schedules, and cleaner payroll configurations.
+                    Complete, self-contained offline JSON snapshot of tasks, schedules, cleaner roster, and company templates. 100% free; zero cloud subscriptions.
                   </p>
                   <button
-                    onClick={() => exportBackupJSON(tasks, cleaners)}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-900 dark:text-white transition-colors"
+                    onClick={() => exportBackupJSON(tasks, cleaners, companySettings)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-900 dark:text-white transition-colors shadow-2xs"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Download JSON Backup</span>
+                    <span>Download Complete System Snapshot</span>
                   </button>
                 </div>
 
               </div>
 
-              {/* Production Database Clear & Reset Section */}
+              {/* Production Database Clear & Reset Section (Restricted to Administrators) */}
               <div className="pt-6 border-t border-neutral-200 dark:border-neutral-800 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40">
                   <div>
@@ -389,22 +454,169 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                       <span>Clear All Client & Cleaner Records (Clean Slate)</span>
                     </h4>
                     <p className="text-[11px] text-neutral-600 dark:text-neutral-400 mt-0.5">
-                      Deletes all existing tasks, schedules, and cleaner profiles from the database so you can enter fresh production data. Settings and staff accounts remain intact.
+                      Deletes all existing tasks, schedules, and cleaner profiles from the database for a clean production start. Staff accounts remain intact.
                     </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      onResetData();
-                      onClose();
-                    }}
-                    className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors shadow-xs"
-                  >
-                    <RefreshCcw className="w-3.5 h-3.5" />
-                    <span>Clear All Data</span>
-                  </button>
+                  {isAdmin ? (
+                    <button
+                      onClick={() => {
+                        onResetData();
+                        onClose();
+                      }}
+                      className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors shadow-xs"
+                    >
+                      <RefreshCcw className="w-3.5 h-3.5" />
+                      <span>Clear All Data</span>
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-neutral-400 italic">Admin only</span>
+                  )}
                 </div>
               </div>
 
+            </div>
+          )}
+
+          {activeTab === 'restore' && (
+            <div className="space-y-6">
+              <div className="p-4 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold">Zero-Cost Offline Disaster Recovery</h4>
+                  <p className="mt-0.5 text-neutral-600 dark:text-neutral-300 text-[11.5px]">
+                    Restore all your cleaning schedules, clients, cleaner roster, and business configurations from any previously exported <code className="font-mono bg-white dark:bg-neutral-800 px-1 py-0.5 rounded">.json</code> snapshot without needing paid cloud backup add-ons.
+                  </p>
+                </div>
+              </div>
+
+              {!isAdmin ? (
+                <div className="p-8 text-center bg-neutral-50 dark:bg-neutral-850 rounded-2xl border border-neutral-200 dark:border-neutral-800">
+                  <AlertCircle className="w-8 h-8 text-neutral-400 mx-auto mb-2" />
+                  <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200">
+                    Administrator Access Required
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    System snapshot restorations can only be performed by Managers or Administrators.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* File Upload Dropzone */}
+                  <div className="border-2 border-dashed border-neutral-300 dark:border-neutral-700 rounded-2xl p-6 sm:p-8 text-center hover:border-[#FFB509] transition-colors bg-neutral-50/50 dark:bg-neutral-800/30">
+                    <input
+                      type="file"
+                      id="snapshot-file-upload"
+                      accept=".json,application/json"
+                      onChange={handleSnapshotUpload}
+                      className="hidden"
+                    />
+                    <label htmlFor="snapshot-file-upload" className="cursor-pointer block">
+                      <UploadCloud className="w-10 h-10 text-neutral-400 mx-auto mb-3" />
+                      <span className="text-sm font-bold text-neutral-900 dark:text-white block">
+                        {snapshotFileName || 'Choose or drop a DBuzzingBees Snapshot (.json)'}
+                      </span>
+                      <span className="text-xs text-neutral-500 block mt-1">
+                        Select a .json file exported from DBuzzingBees
+                      </span>
+                    </label>
+                  </div>
+
+                  {isParsing && (
+                    <div className="text-center py-4 text-xs font-semibold text-neutral-600 dark:text-neutral-300 flex items-center justify-center gap-2">
+                      <RefreshCcw className="w-4 h-4 animate-spin text-[#FFB509]" />
+                      <span>Validating snapshot structure...</span>
+                    </div>
+                  )}
+
+                  {parseError && (
+                    <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-xs text-red-700 dark:text-red-300 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                      <span>{parseError}</span>
+                    </div>
+                  )}
+
+                  {importSuccessMessage && (
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{importSuccessMessage}</span>
+                    </div>
+                  )}
+
+                  {snapshotPreview && (
+                    <div className="p-5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800/60 space-y-4 shadow-xs animate-in fade-in">
+                      <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-700 pb-3">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                          <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
+                            Valid Snapshot Ready to Restore
+                          </h4>
+                        </div>
+                        <span className="text-[11px] font-mono text-neutral-500">
+                          Format v{snapshotPreview.version}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800">
+                          <span className="text-[10px] text-neutral-500 uppercase block font-semibold">Tasks / Jobs</span>
+                          <span className="text-lg font-bold text-neutral-900 dark:text-white font-mono-numbers">
+                            {snapshotPreview.tasks.length}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800">
+                          <span className="text-[10px] text-neutral-500 uppercase block font-semibold">Cleaners</span>
+                          <span className="text-lg font-bold text-neutral-900 dark:text-white font-mono-numbers">
+                            {snapshotPreview.cleaners.length}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800">
+                          <span className="text-[10px] text-neutral-500 uppercase block font-semibold">Settings</span>
+                          <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 block mt-1">
+                            {snapshotPreview.companySettings ? 'Included' : 'None'}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800">
+                          <span className="text-[10px] text-neutral-500 uppercase block font-semibold">Export Date</span>
+                          <span className="text-[11px] font-mono text-neutral-700 dark:text-neutral-300 block mt-1 truncate" title={snapshotPreview.exportedAt}>
+                            {snapshotPreview.exportedAt.split('T')[0]}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSnapshotPreview(null);
+                            setSnapshotFileName(null);
+                          }}
+                          className="px-3 py-2 text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:text-neutral-900"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isRestoringSnapshot}
+                          onClick={handleConfirmRestoreSnapshot}
+                          className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs flex items-center gap-1.5"
+                        >
+                          {isRestoringSnapshot ? (
+                            <>
+                              <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Restoring Database...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Confirm & Restore Snapshot</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
