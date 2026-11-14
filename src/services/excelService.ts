@@ -267,8 +267,8 @@ export const exportFinancialPeriodExcel = (
   const cleanersData = summaries.map((s) => ({
     'Cleaner Name': s.cleanerName,
     'Base Hourly Rate ($)': `$${s.hourlyRate.toFixed(2)}`,
-    'Completed Hours': s.completedHours,
-    'Scheduled Hours': s.scheduledHours,
+    'Completed Hours': Number(s.completedHours.toFixed(2)),
+    'Scheduled Hours': Number(s.scheduledHours.toFixed(2)),
     'Hourly Wages ($)': `$${s.regularPay.toFixed(2)}`,
     'Special Task Allowance ($)': `$${s.specialTaskPay.toFixed(2)}`,
     'Total Net Pay ($)': `$${s.totalPay.toFixed(2)}`,
@@ -285,7 +285,7 @@ export const exportFinancialPeriodExcel = (
     const monthlyData = monthlyBreakdown.map((m) => ({
       'Month': m.monthLabel,
       'Jobs Completed': m.taskCount,
-      'Hours Worked': m.hoursWorked,
+      'Hours Worked': Number(m.hoursWorked.toFixed(2)),
       'Client Invoiced ($)': `$${m.totalInvoiced.toFixed(2)}`,
       'Cleaner Wages ($)': `$${m.cleanerWages.toFixed(2)}`,
       'Total Cleaner Payout ($)': `$${m.totalPay.toFixed(2)}`,
@@ -370,14 +370,14 @@ export const exportWeeklyPaySlipExcel = (paySummary: CleanerPaySummary, weekLabe
 
   // Tasks breakdown
   const tasksBreakdown = paySummary.tasks.map(t => {
-    const actualHours = getCleanerTaskHours(t);
-    const earnings = actualHours * paySummary.hourlyRate;
+    const cleanerHours = getCleanerTaskHours(t);
+    const earnings = cleanerHours * paySummary.hourlyRate;
     return {
       'Date': t.date,
       'Client Name': t.clientName || 'N/A',
       'Invoice #': t.invoiceNumber || 'N/A',
       'Time Slot': `${t.startTime || '09:00'} - ${t.endTime || '11:00'}`,
-      'Actual Hours Worked': actualHours,
+      'Billable Hours (Fix ÷ Cleaners)': Number(cleanerHours.toFixed(2)),
       'Client Scope (Fixed Hrs)': t.fixHour,
       'Cleaners on Job': t.assignedCleanerIds.length,
       'Pay Share ($)': earnings.toFixed(2),

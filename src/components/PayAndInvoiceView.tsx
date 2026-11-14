@@ -239,16 +239,16 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
         return sum + rev;
       }, 0);
 
-      // Cleaner Wages: strictly calculated based on the difference between the actual start time and end time of the task
+      // Cleaner Wages: calculated from client fixed hours divided by assigned cleaners
       let cleanerWages = 0;
       let hoursWorked = 0;
       completed.forEach((t) => {
-        const actualHours = getCleanerTaskHours(t);
-        hoursWorked += actualHours * (t.assignedCleanerIds.length || 1);
+        const cleanerHours = getCleanerTaskHours(t);
+        hoursWorked += cleanerHours * t.assignedCleanerIds.length;
         t.assignedCleanerIds.forEach((cId) => {
           const c = cleaners.find((cl) => cl.id === cId);
           const rate = c?.hourlyRate || 28;
-          cleanerWages += actualHours * rate;
+          cleanerWages += cleanerHours * rate;
         });
       });
 
@@ -287,7 +287,7 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
 
       const completedTasks = cleanerPeriodTasks.filter((t) => t.completed);
 
-      // Hours worked calculated based on the difference between start time and end time
+      // Billable hours calculated from client fixed hours divided by assigned cleaners
       const completedHours = completedTasks.reduce((sum, t) => sum + getCleanerTaskHours(t), 0);
       const scheduledHours = cleanerPeriodTasks.reduce((sum, t) => sum + getCleanerTaskHours(t), 0);
 
@@ -1363,8 +1363,9 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                 </p>
               ) : (
                 selectedSummaryForModal.tasks.map((t) => {
-                  const actualHours = getCleanerTaskHours(t);
-                  const cleanerSalary = actualHours * selectedSummaryForModal.hourlyRate;
+                  const cleanerHours = getCleanerTaskHours(t);
+                  const cleanerSalary = cleanerHours * selectedSummaryForModal.hourlyRate;
+                  const cleanerCount = Math.max(1, t.assignedCleanerIds?.length || 1);
                   return (
                     <div
                       key={t.id}
@@ -1376,7 +1377,7 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                             {t.clientName || 'Client Unspecified'}
                           </span>
                           <span className="font-mono text-[11px] text-neutral-500">
-                            {formatDate(t.date)} · {t.startTime} – {t.endTime} ({actualHours.toFixed(1)} hrs actual)
+                            {formatDate(t.date)} · {t.startTime} – {t.endTime} ({Number(cleanerHours.toFixed(2))} hrs/cleaner)
                           </span>
                           {t.assignedCleanerIds?.length > 1 && (
                             <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 px-1.5 py-0.5 rounded font-semibold">
@@ -1390,7 +1391,7 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                           )}
                         </div>
                         <p className="text-[11px] text-neutral-500 mt-0.5">
-                          {t.address} · Client fixed: {t.fixHour}h
+                          {t.address} · Client fixed: {t.fixHour}h ÷ {cleanerCount} {cleanerCount === 1 ? 'cleaner' : 'cleaners'}
                         </p>
                       </div>
 
@@ -1539,7 +1540,7 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
                           )}
                         </td>
                         <td className="py-2 text-right align-top font-bold text-neutral-900">
-                          {cleanerHours}h
+                          {Number(cleanerHours.toFixed(2))}h
                         </td>
                         <td className="py-2 text-right align-top font-bold text-neutral-900">
                           ${cleanerPay.toFixed(2)}
@@ -1561,7 +1562,7 @@ export const PayAndInvoiceView: React.FC<PayAndInvoiceViewProps> = ({
             {/* Wage Calculation Summary */}
             <div className="border-t pt-4 space-y-1.5 text-xs font-mono">
               <div className="flex justify-between text-neutral-600">
-                <span>Total Work Hours ({selectedSummaryForModal.completedHours} hrs):</span>
+                <span>Total Work Hours ({Number(selectedSummaryForModal.completedHours.toFixed(2))} hrs):</span>
                 <span>${selectedSummaryForModal.regularPay.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-neutral-600">

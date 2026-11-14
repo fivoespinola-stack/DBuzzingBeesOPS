@@ -132,8 +132,8 @@ export const getEstimatedCompletionHours = (fixHour: number, cleanerCount: numbe
 };
 
 /**
- * Returns the billable working hours for a cleaner on a specific task.
- * Computed strictly from the difference between the actual start time and end time.
+ * Returns the billable salary hours for a cleaner on a specific task.
+ * Computed from the client's fixed hours divided by how many cleaners are assigned.
  */
 export const getCleanerTaskHours = (task: {
   startTime?: string;
@@ -141,9 +141,11 @@ export const getCleanerTaskHours = (task: {
   fixHour?: number;
   assignedCleanerIds?: string[];
 }): number => {
-  const cleanerCount = task.assignedCleanerIds?.length || 1;
-  const fallback = cleanerCount > 1 ? (task.fixHour || 0) / cleanerCount : (task.fixHour || 0);
-  return getTaskDurationHours(task.startTime, task.endTime, fallback);
+  const cleanerCount = Math.max(1, task.assignedCleanerIds?.length || 1);
+  if (typeof task.fixHour === 'number' && !isNaN(task.fixHour)) {
+    return Math.max(0, task.fixHour) / cleanerCount;
+  }
+  return getTaskDurationHours(task.startTime, task.endTime, 0) / cleanerCount;
 };
 
 // Get the Monday (start) of the week for a given date

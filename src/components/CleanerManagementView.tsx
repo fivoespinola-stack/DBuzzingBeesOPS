@@ -299,7 +299,7 @@ export const CleanerManagementView: React.FC<CleanerManagementViewProps> = ({
                   </label>
                   <input
                     type="number"
-                    step="0.5"
+                    step="any"
                     min="1"
                     required
                     value={hourlyRate}

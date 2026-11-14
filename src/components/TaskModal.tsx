@@ -65,7 +65,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('12:00');
   const [fixHour, setFixHour] = useState<number>(3.0);
-  const [rate, setRate] = useState<number>(55.0);
+  const [rateInput, setRateInput] = useState<string>('55');
   const [payType, setPayType] = useState<PayType>('Hourly');
   const [paymentTerm, setPaymentTerm] = useState<PaymentTerm>('Cash');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -122,7 +122,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setStartTime(taskToEdit.startTime || '09:00');
         setEndTime(taskToEdit.endTime || '12:00');
         setFixHour(taskToEdit.fixHour || 3.0);
-        setRate(taskToEdit.rate || 55.0);
+        setRateInput(String(taskToEdit.rate ?? 55));
 
         // Pay Type initialization (Restored to original options: Hourly or Fixed Price)
         const currentPayType = taskToEdit.payType;
@@ -180,7 +180,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setStartTime('09:00');
         setFixHour(3.0);
         setEndTime(calculateEndTime('09:00', 3.0));
-        setRate(55.0);
+        setRateInput('55');
         setPayType('Hourly');
         setPaymentTerm('Cash');
         // Leave invoice number empty until client pays obligation
@@ -277,8 +277,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (fixHour <= 0) {
       newErrors.fixHour = 'Estimated hours must be greater than 0.';
     }
-    if (rate < 0) {
-      newErrors.rate = 'Rate cannot be negative.';
+    const parsedRate = parseFloat(rateInput);
+    if (rateInput.trim() === '' || isNaN(parsedRate) || parsedRate < 0) {
+      newErrors.rate = 'Please enter a valid non-negative rate.';
     }
     if (isCustomJob && !customJobType.trim()) {
       newErrors.jobType = 'Please specify custom job type.';
@@ -324,7 +325,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       lastConfirmationChannel: taskToEdit?.lastConfirmationChannel,
       confirmationLogs: taskToEdit?.confirmationLogs || [],
       fixHour,
-      rate,
+      rate: parseFloat(rateInput) || 0,
       payType,
       paymentTerm,
       invoiceNumber: invoiceNumber.trim(),
@@ -781,7 +782,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
               {startTime && endTime && (
                 <p className="mt-1 text-[11px] text-neutral-500 font-mono">
-                  Elapsed: <strong className="text-neutral-800 dark:text-neutral-200">{getTaskDurationHours(startTime, endTime)} hrs</strong> (salary basis)
+                  Elapsed: <strong className="text-neutral-800 dark:text-neutral-200">{getTaskDurationHours(startTime, endTime)} hrs</strong> · Salary basis: <strong className="text-neutral-800 dark:text-neutral-200">{Number(((fixHour || 0) / Math.max(1, assignedCleanerIds.length)).toFixed(2))} hrs/cleaner</strong>
                 </p>
               )}
             </div>
@@ -798,7 +799,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </strong>{' '}
                 (client fixed hours: {fixHour} hrs).
                 <div className="text-[11px] text-neutral-600 dark:text-neutral-400 mt-0.5">
-                  Each cleaner is paid for actual elapsed hours ({getTaskDurationHours(startTime, endTime)} hrs) at their individual rate.
+                  Each cleaner is paid for {Number(((fixHour || 0) / Math.max(1, assignedCleanerIds.length)).toFixed(2))} hrs ({fixHour} hrs &divide; {assignedCleanerIds.length} cleaners) at their individual rate.
                 </div>
               </div>
               <button
@@ -841,11 +842,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <DollarSign className="w-4 h-4 text-neutral-400 absolute left-3 top-3" />
                 <input
                   id="task-rate"
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  value={rate}
-                  onChange={(e) => setRate(parseFloat(e.target.value) || 0)}
+                  type="text"
+                  inputMode="decimal"
+                  value={rateInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                      setRateInput(val);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (rateInput.trim() === '' || rateInput === '.' || isNaN(parseFloat(rateInput))) {
+                      setRateInput('0');
+                    }
+                  }}
+                  placeholder="0.00"
                   className="w-full pl-8 pr-3.5 py-2 text-sm bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FFB509] text-neutral-900 dark:text-white font-mono"
                 />
               </div>
