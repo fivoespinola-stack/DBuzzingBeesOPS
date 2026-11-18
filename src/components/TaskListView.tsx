@@ -75,6 +75,9 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   const [frequencyFilter, setFrequencyFilter] = useState<string>('all');
   const [jobTypeFilter, setJobTypeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'upcoming' | 'past'>('all');
+  const [specificDate, setSpecificDate] = useState<string>('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [confirmationFilter, setConfirmationFilter] = useState<'all' | ConfirmationStatus>('all');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   
@@ -176,10 +179,24 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
         return false;
       }
 
-      // Date
+      // Date Window
       if (dateFilter === 'today' && t.date !== todayStr) return false;
       if (dateFilter === 'upcoming' && t.date < todayStr) return false;
       if (dateFilter === 'past' && t.date >= todayStr) return false;
+
+      // Exact Date or Date Range
+      if (specificDate) {
+        if (t.date !== specificDate) return false;
+      } else {
+        if (dateFrom && t.date < dateFrom) return false;
+        if (dateTo && t.date > dateTo) return false;
+      }
+
+      // Confirmation Status Filter
+      if (confirmationFilter !== 'all') {
+        const status = t.confirmationStatus || 'not_sent';
+        if (status !== confirmationFilter) return false;
+      }
 
       // Admin Approval Filter
       if (approvalFilter === 'approved' && !t.isApproved) return false;
@@ -187,7 +204,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
 
       return true;
     });
-  }, [tasks, searchQuery, statusFilter, approvalFilter, cleanerFilter, clientFilter, paymentTermFilter, frequencyFilter, jobTypeFilter, dateFilter, confirmationFilter, todayStr]);
+  }, [tasks, searchQuery, statusFilter, approvalFilter, cleanerFilter, clientFilter, paymentTermFilter, frequencyFilter, jobTypeFilter, dateFilter, specificDate, dateFrom, dateTo, confirmationFilter, todayStr]);
 
   // Sort tasks by Date: Newest to Oldest or Oldest to Newest
   const sortedTasks = useMemo(() => {
@@ -217,6 +234,9 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     setFrequencyFilter('all');
     setJobTypeFilter('all');
     setDateFilter('all');
+    setSpecificDate('');
+    setDateFrom('');
+    setDateTo('');
     setConfirmationFilter('all');
     setSelectedTaskIds([]);
     setDateSortOrder('newest');
@@ -232,6 +252,9 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     frequencyFilter !== 'all' ||
     jobTypeFilter !== 'all' ||
     dateFilter !== 'all' ||
+    Boolean(specificDate) ||
+    Boolean(dateFrom) ||
+    Boolean(dateTo) ||
     confirmationFilter !== 'all';
 
   return (
@@ -464,6 +487,90 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
           </div>
         </div>
 
+        {/* Custom Date Filter Bar (Exact Date or Date Range) */}
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-neutral-100 dark:border-neutral-800 text-xs">
+          <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] text-neutral-500">
+            <Calendar className="w-3.5 h-3.5 text-amber-500" />
+            <span>Filter by Date:</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="task-specific-date" className="text-[11px] font-semibold text-neutral-600 dark:text-neutral-400">
+              Exact Date
+            </label>
+            <input
+              id="task-specific-date"
+              type="date"
+              value={specificDate}
+              onChange={(e) => {
+                setSpecificDate(e.target.value);
+                if (e.target.value) {
+                  setDateFrom('');
+                  setDateTo('');
+                  setDateFilter('all');
+                }
+                setCurrentPage(1);
+              }}
+              className="px-2.5 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-[#FFB509]"
+            />
+          </div>
+
+          <span className="text-neutral-400 text-[11px]">or range</span>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <label htmlFor="task-date-from" className="text-[11px] font-semibold text-neutral-600 dark:text-neutral-400">
+              From
+            </label>
+            <input
+              id="task-date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                if (e.target.value) {
+                  setSpecificDate('');
+                  setDateFilter('all');
+                }
+                setCurrentPage(1);
+              }}
+              className="px-2.5 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-[#FFB509]"
+            />
+            <label htmlFor="task-date-to" className="text-[11px] font-semibold text-neutral-600 dark:text-neutral-400">
+              To
+            </label>
+            <input
+              id="task-date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                if (e.target.value) {
+                  setSpecificDate('');
+                  setDateFilter('all');
+                }
+                setCurrentPage(1);
+              }}
+              className="px-2.5 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-[#FFB509]"
+            />
+          </div>
+
+          {(specificDate || dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSpecificDate('');
+                setDateFrom('');
+                setDateTo('');
+                setCurrentPage(1);
+              }}
+              className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+              <span>Clear date</span>
+            </button>
+          )}
+        </div>
+
         {/* Clear Filters Indicator */}
         {hasActiveFilters && (
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1 border-t border-neutral-100 dark:border-neutral-800">
@@ -476,6 +583,31 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                   <User className="w-3 h-3 text-amber-600" />
                   Client: {clientFilter}
                   <button onClick={() => setClientFilter('all')} className="ml-1 hover:text-red-600" title="Clear client filter">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {specificDate && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 text-[11px] font-semibold">
+                  <Calendar className="w-3 h-3 text-amber-600" />
+                  Date: {formatDate(specificDate)}
+                  <button onClick={() => setSpecificDate('')} className="ml-1 hover:text-red-600" title="Clear date filter">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {(dateFrom || dateTo) && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 text-[11px] font-semibold">
+                  <Calendar className="w-3 h-3 text-amber-600" />
+                  Range: {dateFrom ? formatDate(dateFrom) : '...'} – {dateTo ? formatDate(dateTo) : '...'}
+                  <button
+                    onClick={() => {
+                      setDateFrom('');
+                      setDateTo('');
+                    }}
+                    className="ml-1 hover:text-red-600"
+                    title="Clear date range filter"
+                  >
                     <X className="w-3 h-3" />
                   </button>
                 </span>

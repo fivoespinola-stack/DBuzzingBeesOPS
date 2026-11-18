@@ -176,7 +176,7 @@ export const getWeekLabel = (startDate: Date): string => {
 };
 
 // Generate clean, formatted schedule text for dispatching to cleaners via SMS/WhatsApp
-// Contains ONLY: Client Name, Contact, Time, Job Type, Duration, Address, Notes, and Assigned Cleaners
+// Contains ONLY: Client Name, Time, Duration (fixHour / cleaners), Address, and Assigned Cleaners
 export const generateScheduleDispatchText = (
   tasks: Array<any>,
   cleaners: Array<any>,
@@ -207,17 +207,12 @@ export const generateScheduleDispatchText = (
   sortedTasks.forEach((task, index) => {
     const cleanerNames = task.assignedCleanerIds.map(getCleanerName).join(', ');
     const timeRange = `${formatTime12h(task.startTime)} - ${formatTime12h(task.endTime)}`;
-    const contactInfo = [task.clientPhone, task.clientEmail].filter(Boolean).join(' | ') || 'N/A';
+    const cleanerHours = Number(getCleanerTaskHours(task).toFixed(2));
     
-    text += `[${index + 1}] ${timeRange} (${task.fixHour} hrs)\n`;
-    text += `Job: ${task.jobType}\n`;
+    text += `[${index + 1}] ${timeRange} (${cleanerHours} hrs)\n`;
     text += `Client: ${task.clientName || 'N/A'}\n`;
-    text += `Contact: ${contactInfo}\n`;
     text += `Address: ${task.address}\n`;
     text += `Assigned Cleaners: ${cleanerNames || 'Unassigned'}\n`;
-    if (task.remarks) {
-      text += `Notes: ${task.remarks}\n`;
-    }
     text += `\n`;
   });
 
@@ -228,24 +223,19 @@ export const generateSingleTaskDispatchText = (task: any, cleaners: Array<any>):
   const getCleanerName = (id: string) => cleaners.find((c) => c.id === id)?.name || id;
   const cleanerNames = task.assignedCleanerIds.map(getCleanerName).join(', ');
   const timeRange = `${formatTime12h(task.startTime)} - ${formatTime12h(task.endTime)}`;
-  const contactInfo = [task.clientPhone, task.clientEmail].filter(Boolean).join(' | ') || 'N/A';
+  const cleanerHours = Number(getCleanerTaskHours(task).toFixed(2));
 
   let text = `Job Schedule\n`;
   text += `Time: ${timeRange}\n`;
-  text += `Duration: ${task.fixHour} hrs\n`;
-  text += `Job Type: ${task.jobType}\n`;
+  text += `Duration: ${cleanerHours} hrs\n`;
   text += `Client: ${task.clientName || 'N/A'}\n`;
-  text += `Contact: ${contactInfo}\n`;
   text += `Address: ${task.address}\n`;
   text += `Assigned Cleaners: ${cleanerNames || 'Unassigned'}\n`;
-  if (task.remarks) {
-    text += `Notes: ${task.remarks}\n`;
-  }
   return text.trim();
 };
 
 // Generate formatted text for a full week's schedule (Monday to Sunday)
-// Contains ONLY: Client Name, Contact, Time, Job Type, Duration, Address, Notes, and Assigned Cleaners
+// Contains ONLY: Client Name, Time, Duration (fixHour / cleaners), Address, and Assigned Cleaners
 export const generateWeeklyDispatchText = (
   weekTasks: Array<any>,
   cleaners: Array<any>,
@@ -280,17 +270,12 @@ export const generateWeeklyDispatchText = (
     }
     const cleanerNames = task.assignedCleanerIds.map(getCleanerName).join(', ');
     const timeRange = `${formatTime12h(task.startTime)} - ${formatTime12h(task.endTime)}`;
-    const contactInfo = [task.clientPhone, task.clientEmail].filter(Boolean).join(' | ') || 'N/A';
+    const cleanerHours = Number(getCleanerTaskHours(task).toFixed(2));
     
-    text += `• Time: ${timeRange} (${task.fixHour} hrs)\n`;
-    text += `  Job Type: ${task.jobType}\n`;
+    text += `• Time: ${timeRange} (${cleanerHours} hrs)\n`;
     text += `  Client: ${task.clientName || 'N/A'}\n`;
-    text += `  Contact: ${contactInfo}\n`;
     text += `  Address: ${task.address}\n`;
     text += `  Assigned Cleaners: ${cleanerNames || 'Unassigned'}\n`;
-    if (task.remarks) {
-      text += `  Notes: ${task.remarks}\n`;
-    }
     text += `\n`;
   });
 

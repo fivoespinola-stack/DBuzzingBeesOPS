@@ -13,7 +13,6 @@ import {
   MessageSquare, 
   X,
   Phone,
-  Mail,
   User,
   FileSpreadsheet,
   ChevronRight,
@@ -32,6 +31,7 @@ import {
   getOffsetDate,
   getWeekStart,
   getWeekLabel,
+  getCleanerTaskHours,
   generateScheduleDispatchText,
   generateWeeklyDispatchText,
   generateSingleTaskDispatchText,
@@ -40,7 +40,6 @@ import {
   toLocalDateString
 } from '../utils/formatters';
 import { getConfirmationStatusMeta } from '../utils/confirmationHelpers';
-import { SensitiveAccessMask } from './SensitiveAccessMask';
 
 interface DashboardViewProps {
   tasks: Task[];
@@ -80,22 +79,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const isCleaner = userRole === 'cleaner';
   const todayStr = getOffsetDate(0);
 
-  // Today's jobs sorted by start time
+  // Today's pending jobs sorted by start time (completed tasks are hidden from dashboard)
   const todayJobs = useMemo(() => {
     return tasks
-      .filter((t) => t.date === todayStr)
+      .filter((t) => t.date === todayStr && !t.completed)
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
   }, [tasks, todayStr]);
 
   const tomorrowStr = useMemo(() => getOffsetDate(1), []);
   const tomorrowJobs = useMemo(() => {
     return tasks
-      .filter((t) => t.date === tomorrowStr)
+      .filter((t) => t.date === tomorrowStr && !t.completed)
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
   }, [tasks, tomorrowStr]);
 
-  const todayCompletedCount = todayJobs.filter((t) => t.completed).length;
-  const todayTotalHours = todayJobs.reduce((acc, t) => acc + t.fixHour, 0);
+  const todayCompletedCount = useMemo(
+    () => tasks.filter((t) => t.date === todayStr && t.completed).length,
+    [tasks, todayStr]
+  );
+  const todayTotalHours = todayJobs.reduce((acc, t) => acc + getCleanerTaskHours(t), 0);
 
   // Compute Weekly Schedules (Monday to Sunday)
   const currentWeekMonday = useMemo(() => getWeekStart(new Date()), []);
@@ -122,17 +124,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const week1Label = useMemo(() => getWeekLabel(currentWeekMonday), [currentWeekMonday]);
   const week2Label = useMemo(() => getWeekLabel(nextWeekMonday), [nextWeekMonday]);
 
-  // Tasks for Week 1 (Current Week: Mon-Sun)
+  // Pending tasks for Week 1 (Current Week: Mon-Sun)
   const week1Tasks = useMemo(() => {
     return tasks
-      .filter((t) => week1Dates.includes(t.date))
+      .filter((t) => week1Dates.includes(t.date) && !t.completed)
       .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
   }, [tasks, week1Dates]);
 
-  // Tasks for Week 2 (Next Week: Mon-Sun)
+  // Pending tasks for Week 2 (Next Week: Mon-Sun)
   const week2Tasks = useMemo(() => {
     return tasks
-      .filter((t) => week2Dates.includes(t.date))
+      .filter((t) => week2Dates.includes(t.date) && !t.completed)
       .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
   }, [tasks, week2Dates]);
 
@@ -194,10 +196,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     triggerCopy(text, `Week 2 Schedule (${week2Label})`);
   };
 
+  // Quick 1-click copy for a specific day
+  const handleQuickCopyDay = (dayTasks: Task[], dateStr: string, dayLabel: string) => {
+    const text = generateScheduleDispatchText(dayTasks, cleaners, dateStr);
+    triggerCopy(text, `${dayLabel} Schedule`);
+  };
+
   // Copy individual task
   const handleCopySingleTask = (task: Task) => {
     const text = generateSingleTaskDispatchText(task, cleaners);
-    triggerCopy(text, `Job ${task.jobType}`);
+    triggerCopy(text, `${task.clientName || 'Job'} Schedule`);
   };
 
   // Open modal for Today
@@ -256,12 +264,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [dispatchModal, cleaners, todayStr, selectedCleanerForDispatch, customDispatchNotes]);
 
   // Helper renderer for a single job row displaying requested fields:
-  // 1. Time, Job Type & Duration
-  // 2. Client Name & Contact
-  // 3. Service Address & Notes
+  // 1. Time & Duration (divided by number of cleaners)
+  // 2. Client Name & Confirmation Status
+  // 3. Service Address
   // 4. Assigned Cleaners
   const renderJobRow = (task: Task, index: number, showDateBadge?: boolean) => {
     const assignedCleaners = task.assignedCleanerIds.map(getCleanerName);
+    const perCleanerHours = Number(getCleanerTaskHours(task).toFixed(2));
 
     return (
       <div
@@ -292,68 +301,42 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </button>
           </div>
 
-          {/* 1. Time, Job Type, Time Duration */}
+          {/* 1. Time & Duration */}
           <div className="md:col-span-3">
             {showDateBadge && (
               <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-0.5">
                 {formatDate(task.date)}
               </span>
             )}
-            <div className="text-sm font-bold text-neutral-900 dark:text-white truncate flex items-center gap-1.5">
-              <span className="truncate">{task.jobType}</span>
-              {isRecurringFrequency(task.frequency) && (
-                <span
-                  className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 shrink-0"
-                  title={`Recurring job (${formatFrequency(task.frequency)})`}
-                >
-                  <Repeat className="w-2.5 h-2.5" />
-                  <span>{formatFrequency(task.frequency)}</span>
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400 font-mono-numbers mt-0.5">
+            <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400 font-mono-numbers">
               <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
               <span className="font-semibold text-neutral-900 dark:text-neutral-200">
                 {formatTime12h(task.startTime)} – {formatTime12h(task.endTime)}
               </span>
               <span>·</span>
               <span className="font-bold text-neutral-700 dark:text-neutral-300">
-                {task.fixHour}h
+                {perCleanerHours}h
               </span>
             </div>
+            {isRecurringFrequency(task.frequency) && (
+              <div className="mt-1">
+                <span
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                  title={`Recurring job (${formatFrequency(task.frequency)})`}
+                >
+                  <Repeat className="w-2.5 h-2.5" />
+                  <span>{formatFrequency(task.frequency)}</span>
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* 2. Client Name & Contact */}
+          {/* 2. Client Name (Contact removed from dashboard) */}
           <div className="md:col-span-2 text-xs">
             <div className="flex items-center gap-1.5 text-neutral-900 dark:text-white font-semibold">
               <User className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
               <span className="truncate">{task.clientName || 'Private Client'}</span>
             </div>
-            {task.clientPhone ? (
-              <a
-                href={`tel:${task.clientPhone}`}
-                className="flex items-center gap-1.5 text-[11px] text-neutral-600 dark:text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 font-mono mt-0.5"
-                title="Call client"
-              >
-                <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
-                <span className="truncate">{task.clientPhone}</span>
-              </a>
-            ) : null}
-            {task.clientEmail ? (
-              <a
-                href={`mailto:${task.clientEmail}`}
-                className="flex items-center gap-1.5 text-[11px] text-blue-600 dark:text-blue-400 hover:underline mt-0.5 truncate"
-                title={`Email ${task.clientEmail}`}
-              >
-                <Mail className="w-3 h-3 text-neutral-400 shrink-0" />
-                <span className="truncate">{task.clientEmail}</span>
-              </a>
-            ) : null}
-            {!task.clientPhone && !task.clientEmail && (
-              <div className="text-[10px] text-neutral-400 italic mt-0.5">
-                No contact recorded
-              </div>
-            )}
             <div className="mt-1">
               {(() => {
                 const meta = getConfirmationStatusMeta(task.confirmationStatus);
@@ -371,19 +354,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* 3. Service Address & Notes */}
+          {/* 3. Service Address (Notes removed from dashboard) */}
           <div className="md:col-span-3 text-xs">
             <div className="flex items-start gap-1.5 text-neutral-800 dark:text-neutral-200">
               <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0 mt-0.5" />
               <span className="font-medium truncate">{task.address}</span>
             </div>
-            {task.remarks ? (
-              <SensitiveAccessMask text={task.remarks} prefixLabel="Notes" className="mt-1 max-w-full" />
-            ) : (
-              <div className="mt-0.5 text-[11px] text-neutral-400 italic">
-                No special notes
-              </div>
-            )}
           </div>
 
           {/* 4. Assigned Cleaners */}
@@ -430,8 +406,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     onCopyWeek: () => void,
     onOpenDispatch: () => void
   ) => {
-    const totalWeekHours = weekTasksList.reduce((acc, t) => acc + t.fixHour, 0);
-    const completedWeekCount = weekTasksList.filter((t) => t.completed).length;
+    const totalWeekHours = weekTasksList.reduce((acc, t) => acc + getCleanerTaskHours(t), 0);
 
     // Group tasks by date within the week
     const tasksGroupedByDate: { [date: string]: Task[] } = {};
@@ -461,7 +436,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </div>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Monday to Sunday ({weekLabel}) · Total {totalWeekHours.toFixed(1)} hrs · {completedWeekCount}/{weekTasksList.length} done
+                Monday to Sunday ({weekLabel}) · Total {totalWeekHours.toFixed(1)} hrs · {weekTasksList.length} pending
               </p>
             </div>
           </div>
@@ -513,9 +488,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {/* Table Header */}
             <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 bg-neutral-50 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               <div className="col-span-1 text-center">Status</div>
-              <div className="col-span-3">Time, Job & Duration</div>
-              <div className="col-span-2">Client & Contact</div>
-              <div className="col-span-3">Service Address & Notes</div>
+              <div className="col-span-3">Time & Duration</div>
+              <div className="col-span-2">Client</div>
+              <div className="col-span-3">Service Address</div>
               <div className="col-span-2">Assigned Cleaners</div>
               <div className="col-span-1 text-right">Actions</div>
             </div>
@@ -534,7 +509,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 return (
                   <div key={dateStr} className="bg-white dark:bg-neutral-900">
                     {/* Day Banner */}
-                    <div className="px-5 py-2 bg-neutral-100/70 dark:bg-neutral-800/40 border-b border-neutral-200/80 dark:border-neutral-800 flex items-center justify-between text-xs">
+                    <div className="px-5 py-2 bg-neutral-100/70 dark:bg-neutral-800/40 border-b border-neutral-200/80 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-neutral-900 dark:text-white uppercase tracking-wider text-[11px]">
                           {dayName}
@@ -543,12 +518,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           · {dayRuns.length} {dayRuns.length === 1 ? 'run' : 'runs'}
                         </span>
                       </div>
-                      <button
-                        onClick={() => onAddNewTask(dateStr)}
-                        className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline"
-                      >
-                        + Add job on this day
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handleQuickCopyDay(dayRuns, dateStr, dayName)}
+                          title={`Copy schedule for ${dayName}`}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-[11px] font-bold text-neutral-700 dark:text-neutral-200 transition-colors shadow-2xs cursor-pointer"
+                        >
+                          <Copy className="w-3 h-3 text-amber-500" />
+                          <span>Copy Day</span>
+                        </button>
+                        <button
+                          onClick={() => onAddNewTask(dateStr)}
+                          className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                        >
+                          + Add job on this day
+                        </button>
+                      </div>
                     </div>
 
                     {/* Jobs on this date */}
@@ -732,7 +717,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </div>
               <p className="text-xs text-neutral-400 mt-0.5">
-                {formatDateLong(todayStr)} · Total {todayTotalHours.toFixed(1)} hrs duration · {todayCompletedCount}/{todayJobs.length} completed
+                {formatDateLong(todayStr)} · Total {todayTotalHours.toFixed(1)} hrs pending{todayCompletedCount > 0 ? ` · ${todayCompletedCount} completed hidden` : ''}
               </p>
             </div>
           </div>
@@ -790,10 +775,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="p-8 text-center rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-800 bg-white dark:bg-neutral-900/40">
             <CalendarIcon className="w-8 h-8 text-neutral-400 mx-auto mb-2" />
             <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-              No cleaning jobs scheduled for today
+              {todayCompletedCount > 0
+                ? `All ${todayCompletedCount} cleaning ${todayCompletedCount === 1 ? 'job' : 'jobs'} for today are completed!`
+                : 'No pending cleaning jobs scheduled for today'}
             </p>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-              Schedule a job for today or review the upcoming weekly advance schedules below.
+              {todayCompletedCount > 0
+                ? 'Completed tasks are hidden from the dashboard. View them anytime in the Tasks List or Calendar tab.'
+                : 'Schedule a job for today or review the upcoming weekly advance schedules below.'}
             </p>
             <button
               onClick={() => onAddNewTask(todayStr)}
@@ -805,12 +794,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         ) : (
           <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-xs">
             
-            {/* Table Header: Only Time & Job Type, Time Duration, Client & Contact, Address & Notes, Assigned Cleaners */}
+            {/* Table Header: Time & Duration, Client, Service Address, Assigned Cleaners */}
             <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 bg-neutral-50 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               <div className="col-span-1 text-center">Status</div>
-              <div className="col-span-3">Time, Job & Duration</div>
-              <div className="col-span-2">Client & Contact</div>
-              <div className="col-span-3">Service Address & Notes</div>
+              <div className="col-span-3">Time & Duration</div>
+              <div className="col-span-2">Client</div>
+              <div className="col-span-3">Service Address</div>
               <div className="col-span-2">Assigned Cleaners</div>
               <div className="col-span-1 text-right">Actions</div>
             </div>
